@@ -308,7 +308,7 @@ fn visible_indices(
 }
 
 /// Input: u32 count + 16-byte records (i32 origin xyz, u8 open-face mask,
-/// u8 reserved, u16 vertex count, u32 reserved). Planes are six native-endian
+/// u8 reserved, u16 vertex count). Planes are six native-endian
 /// vec4 equations with ax+by+cz+d >= 0 on the inside. Output is u32 indices.
 #[no_mangle]
 pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_visibleSections0(

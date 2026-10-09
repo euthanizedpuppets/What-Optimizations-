@@ -443,74 +443,65 @@ public final class NativeSectionMesher {
         SnapshotWorkspace workspace = SNAPSHOT_WORKSPACE.get();
         HashMap<BlockState, Integer> paletteLookup = workspace.paletteLookup;
         paletteLookup.clear();
+        workspace.paletteCount = 0;
         short[] cellPalette = workspace.cellPalette;
         byte[] sky = workspace.sky;
         byte[] block = workspace.block;
-        int paletteCount = 0;
-
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
-        int cell = 0;
+        // Scan the 4096 interior cells first. Empty/non-meshable sections can
+        // return before we touch the 1736 neighbor-border cells or query light.
         int openFaces = 0;
         boolean hasMeshableInterior = false;
-        for (int z = 0; z < GRID; z++) {
-            for (int y = 0; y < GRID; y++) {
-                for (int x = 0; x < GRID; x++) {
+        for (int z = 1; z <= 16; z++) {
+            for (int y = 1; y <= 16; y++) {
+                for (int x = 1; x <= 16; x++) {
                     pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
                     BlockState state = region.getBlockState(pos);
-                    Integer paletteIndex = paletteLookup.get(state);
-
-                    if (paletteIndex == null) {
-                        int stateId = Block.getId(state);
-                        boolean occludes = state.isSolidRender();
-                        boolean fullCube = occludes && Block.isShapeFullBlock(state.getShape(region, pos));
-                        boolean meshable = fullCube
-                                && state.getRenderShape() == RenderShape.MODEL
-                                && state.getFluidState().isEmpty()
-                                && !state.hasBlockEntity();
-
-                        int flags = (meshable ? FLAG_MESHABLE : 0) | (occludes ? FLAG_OCCLUDES : 0);
-                        paletteIndex = paletteCount;
-                        if (paletteCount >= CELL_COUNT || paletteCount > Short.MAX_VALUE) {
-                            throw new IllegalStateException("Section palette exceeded ABI limits");
-                        }
-                        paletteLookup.put(state, paletteIndex);
-                        workspace.paletteStateIds[paletteCount] = stateId;
-                        workspace.paletteFlags[paletteCount] = (byte) flags;
-                        paletteCount++;
-                    }
-
-                    cellPalette[cell] = paletteIndex.shortValue();
+                    int paletteIndex = paletteIndexFor(state, pos, region, workspace);
+                    int cell = cellIndex(x, y, z);
+                    cellPalette[cell] = (short) paletteIndex;
                     int cellFlags = workspace.paletteFlags[paletteIndex] & 0xff;
+
                     if ((cellFlags & FLAG_OCCLUDES) == 0) {
-                        if (x == 1 && y >= 1 && y <= 16 && z >= 1 && z <= 16) openFaces |= 1 << 0;
-                        if (x == 16 && y >= 1 && y <= 16 && z >= 1 && z <= 16) openFaces |= 1 << 1;
-                        if (y == 1 && x >= 1 && x <= 16 && z >= 1 && z <= 16) openFaces |= 1 << 2;
-                        if (y == 16 && x >= 1 && x <= 16 && z >= 1 && z <= 16) openFaces |= 1 << 3;
-                        if (z == 1 && x >= 1 && x <= 16 && y >= 1 && y <= 16) openFaces |= 1 << 4;
-                        if (z == 16 && x >= 1 && x <= 16 && y >= 1 && y <= 16) openFaces |= 1 << 5;
+                        if (x == 1) openFaces |= 1 << 0;
+                        if (x == 16) openFaces |= 1 << 1;
+                        if (y == 1) openFaces |= 1 << 2;
+                        if (y == 16) openFaces |= 1 << 3;
+                        if (z == 1) openFaces |= 1 << 4;
+                        if (z == 16) openFaces |= 1 << 5;
                     }
-                    if (x >= 1 && x <= 16 && y >= 1 && y <= 16 && z >= 1 && z <= 16
-                            && (cellFlags & FLAG_MESHABLE) != 0) {
+                    if ((cellFlags & FLAG_MESHABLE) != 0) {
                         hasMeshableInterior = true;
                     }
-                    cell++;
                 }
             }
         }
 
         workspace.openFaces = openFaces;
-
-        // Sections without an admitted opaque cube cannot produce native faces.
-        // Avoid all light lookups, JNI crossing, and Rust traversal for these.
         if (!hasMeshableInterior) {
             return null;
+        }
+
+        // Fill only the border cells now that we know a native mesh is possible.
+        for (int z = 0; z < GRID; z++) {
+            for (int y = 0; y < GRID; y++) {
+                for (int x = 0; x < GRID; x++) {
+                    if (x > 0 && x < 17 && y > 0 && y < 17 && z > 0 && z < 17) {
+                        continue;
+                    }
+                    pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
+                    BlockState state = region.getBlockState(pos);
+                    int paletteIndex = paletteIndexFor(state, pos, region, workspace);
+                    cellPalette[cellIndex(x, y, z)] = (short) paletteIndex;
+                }
+            }
         }
 
         LevelLightEngine lightEngine = region.getLightEngine();
         LayerLightEventListener skyLight = lightEngine.getLayerListener(LightLayer.SKY);
         LayerLightEventListener blockLight = lightEngine.getLayerListener(LightLayer.BLOCK);
-        cell = 0;
+        int cell = 0;
         for (int z = 0; z < GRID; z++) {
             for (int y = 0; y < GRID; y++) {
                 for (int x = 0; x < GRID; x++) {
@@ -522,6 +513,7 @@ public final class NativeSectionMesher {
             }
         }
 
+        int paletteCount = workspace.paletteCount;
         int paletteOffset = HEADER_BYTES;
         int cellsOffset = paletteOffset + paletteCount * PALETTE_ENTRY_BYTES;
         int totalBytes = cellsOffset + CELL_COUNT * CELL_ENTRY_BYTES;
@@ -566,6 +558,40 @@ public final class NativeSectionMesher {
         return input;
     }
 
+    private static int paletteIndexFor(
+            BlockState state,
+            BlockPos pos,
+            RenderSectionRegion region,
+            SnapshotWorkspace workspace) {
+        Integer existing = workspace.paletteLookup.get(state);
+        if (existing != null) {
+            return existing;
+        }
+
+        int paletteIndex = workspace.paletteCount;
+        if (paletteIndex >= CELL_COUNT || paletteIndex > Short.MAX_VALUE) {
+            throw new IllegalStateException("Section palette exceeded ABI limits");
+        }
+        int stateId = Block.getId(state);
+        boolean occludes = state.isSolidRender();
+        boolean fullCube = occludes && Block.isShapeFullBlock(state.getShape(region, pos));
+        boolean meshable = fullCube
+                && state.getRenderShape() == RenderShape.MODEL
+                && state.getFluidState().isEmpty()
+                && !state.hasBlockEntity();
+        int flags = (meshable ? FLAG_MESHABLE : 0) | (occludes ? FLAG_OCCLUDES : 0);
+
+        workspace.paletteLookup.put(state, paletteIndex);
+        workspace.paletteStateIds[paletteIndex] = stateId;
+        workspace.paletteFlags[paletteIndex] = (byte) flags;
+        workspace.paletteCount++;
+        return paletteIndex;
+    }
+
+    private static int cellIndex(int x, int y, int z) {
+        return x + GRID * (y + GRID * z);
+    }
+
     private static int clampLight(int value) {
         return Math.max(0, Math.min(15, value));
     }
@@ -591,5 +617,6 @@ public final class NativeSectionMesher {
         private final int[] paletteStateIds = new int[CELL_COUNT];
         private final byte[] paletteFlags = new byte[CELL_COUNT];
         private int openFaces;
+        private int paletteCount;
     }
 }

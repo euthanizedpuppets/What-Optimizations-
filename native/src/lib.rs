@@ -430,7 +430,7 @@ fn write_vertex(dst: &mut [u8], offset: usize, vertex: Vertex) {
     dst[offset + 1] = vertex.y;
     dst[offset + 2] = vertex.z;
     dst[offset + 3] = vertex.face;
-    dst[offset + 4..offset + 8].copy_from_slice(&vertex.state_id.to_le_bytes());
+    dst[offset + 4..offset + 8].copy_from_slice(&vertex.state_id.to_ne_bytes());
     dst[offset + 8] = vertex.sky;
     dst[offset + 9] = vertex.block;
     dst[offset + 10] = vertex.ao;

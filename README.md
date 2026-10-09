@@ -7,6 +7,7 @@ A deliberately overengineered Minecraft Java 26.2 Fabric experiment: move sectio
 - Minecraft Java Edition **26.2**, Java **25**, Fabric Loader **0.19.5**.
 - Rust `cdylib`, JNI direct-buffer ABI, bounded Rayon workers.
 - The Gradle wrapper is committed; a global Gradle installation is not required.
+- The Phase 0 Force-OpenGL preference hooks are enabled again on this branch for the requested GL 3.3 path; backend selection still needs verification in the target client.
 
 Build the Fabric mod and platform-native library:
 
@@ -72,7 +73,7 @@ Those limits mean this branch is a real pipeline prototype and instrumentation p
 
 Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris or other renderer replacements. Back up test worlds before experimenting.
 
-1. Download the `minecraft-mod-jar` artifact from the latest successful **Build** workflow run and put the JAR in the instance's `mods` folder.
+1. Prefer the `minecraft-mod-jar` artifact from a fully successful **Build** workflow run. For Debian/Linux testing while the Windows runner has a checkout failure, use the `minecraft-mod-jar-linux-smoke` artifact produced by the independent wrapper build (that JAR contains the Linux x86-64 `.so` only). You can also use the attached Linux smoke-test JAR when supplied in chat.
 2. Launch and travel through several sections. By default vanilla renders the world; Rust keeps shadow geometry for inspection.
 3. Watch `logs/latest.log` for `Rust JNI smoke test completed successfully.`, `Rust async mesher:` lines, or native failure messages.
 4. Press **F8** to view the diagnostic geometry overlay, **F9** to enable full sampling and vanilla-face comparisons, and **F7** to turn native meshing off completely.

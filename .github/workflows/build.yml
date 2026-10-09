@@ -51,8 +51,6 @@ jobs:
           esac
           mkdir -p "build/native-output/natives/$platform"
           cp "native/target/release/$library" "build/native-output/natives/$platform/"
-          mkdir -p "build/native-output/formatted-source"
-          cp native/src/lib.rs "build/native-output/formatted-source/lib.rs"
           echo "Staged $library for $platform"
       - name: Upload native library
         uses: actions/upload-artifact@v4
@@ -61,6 +59,14 @@ jobs:
           path: build/native-output/
           if-no-files-found: error
           retention-days: 14
+      - name: Publish rustfmt output for source review
+        if: matrix.os == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-output
+          path: native/src/lib.rs
+          if-no-files-found: error
+          retention-days: 7
 
   mod-jar:
     name: Build Minecraft mod jar

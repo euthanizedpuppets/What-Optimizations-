@@ -3,6 +3,8 @@
   "package": "dev.euthanized.whatoptimizations.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ForceOpenGLWindowMixin",
+    "ForceOpenGLOptionsMixin",
     "SectionCompilerMesherMixin",
     "MinecraftTickMixin",
     "NativeRendererMixin",

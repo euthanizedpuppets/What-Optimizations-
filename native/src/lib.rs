@@ -99,7 +99,9 @@ fn pool() -> &'static rayon::ThreadPool {
     POOL.get_or_init(|| {
         let available = std::thread::available_parallelism().map(|v| v.get()).unwrap_or(2);
         ThreadPoolBuilder::new()
-            .num_threads(available.saturating_sub(1).clamp(1, 4))
+            // Keep the native helper pool small so chunk meshing does not crowd
+            // Minecraft's own workers or the integrated server tick thread.
+            .num_threads(available.saturating_sub(1).clamp(1, 2))
             .thread_name(|index| format!("what-optimizations-mesh-{index}"))
             .build()
             .expect("could not initialize Rust meshing pool")

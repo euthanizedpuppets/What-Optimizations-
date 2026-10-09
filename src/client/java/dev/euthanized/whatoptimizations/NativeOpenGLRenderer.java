@@ -44,6 +44,11 @@ final class NativeOpenGLRenderer {
             () -> ByteBuffer.allocateDirect(MAX_METADATA * Integer.BYTES).order(ByteOrder.nativeOrder()));
     private static final ThreadLocal<ByteBuffer> COUNTS = ThreadLocal.withInitial(
             () -> ByteBuffer.allocateDirect(MAX_METADATA * Integer.BYTES).order(ByteOrder.nativeOrder()));
+    // Reuse conversion memory on the render thread instead of allocating one
+    // direct buffer for every uploaded section (direct buffers are expensive
+    // to reclaim and chunk rebuilds can produce hundreds in a burst).
+    private static final ThreadLocal<ByteBuffer> CONVERT_BUFFER = ThreadLocal.withInitial(
+            () -> ByteBuffer.allocateDirect(64 * 1024).order(ByteOrder.nativeOrder()));
     private static final boolean RUST_GL_ENABLED = Boolean.parseBoolean(
             System.getProperty("whatoptimizations.nativeRenderer.rustGl", "true"));
     private static final String[] RUST_GL_FUNCTIONS = {
@@ -404,7 +409,17 @@ final class NativeOpenGLRenderer {
     private static ByteBuffer convertVertices(NativeSectionMeshCache.MeshSnapshot mesh) {
         byte[] packed = mesh.bytes();
         ByteBuffer source = ByteBuffer.wrap(packed).order(ByteOrder.nativeOrder());
-        ByteBuffer target = ByteBuffer.allocateDirect(packed.length).order(ByteOrder.nativeOrder());
+        ByteBuffer target = CONVERT_BUFFER.get();
+        if (target.capacity() < packed.length) {
+            int capacity = 1;
+            while (capacity < packed.length) {
+                capacity = Math.multiplyExact(capacity, 2);
+            }
+            target = ByteBuffer.allocateDirect(capacity).order(ByteOrder.nativeOrder());
+            CONVERT_BUFFER.set(target);
+        }
+        target.clear();
+        target.limit(packed.length);
         // NativeSectionMesher uses BlockPos.asLong(sectionPos.origin()) for cache
         // keys. Those coordinates are already block-space origins; shifting
         // them would move the overlay sixteen times too far from the real section.

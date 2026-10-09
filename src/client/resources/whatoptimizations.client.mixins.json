@@ -3,7 +3,10 @@
   "package": "dev.euthanized.whatoptimizations.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "SectionCompilerMesherMixin"
+    "SectionCompilerMesherMixin",
+    "MinecraftTickMixin",
+    "NativeRendererMixin",
+    "DebugScreenOverlayMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -13,7 +13,7 @@ The Phase 0 build scaffold passes GitHub Actions. Phase 1 now intercepts the ver
 - Rust face occlusion, greedy coplanar rectangle merging, initial corner AO/light sampling, and a 16-byte vertex stride.
 - A 16 MiB access-ordered CPU cache for native output.
 - GitHub Actions compiles native code and packages the platform libraries inside the Fabric mod JAR.
-- Shadow work is sampled by default: one in every four section-compiler callbacks. Logs include averaged snapshot, JNI/Rust, and copy/cache timings so the duplicate work can be quantified.
+- Shadow work is sampled by default: one in every eight section-compiler callbacks. Logs include averaged snapshot, JNI/Rust, and copy/cache timings so the duplicate work can be quantified.
 
 The source-audit workflow runs Loom's genSources on the exact Minecraft 26.2 dependency. It verified this actual method signature:
 
@@ -35,8 +35,8 @@ Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris 
 
 1. Download `minecraft-mod-jar` from the latest **successful** GitHub Actions Build run and put the JAR in the instance's `mods` folder.
 2. Launch once, create or open a test world, and travel through a few chunk sections. Vanilla is still rendering the world; the Rust mesh is diagnostic shadow data only.
-3. In `logs/latest.log`, look for `Rust JNI smoke test completed successfully.` and a line beginning `Rust shadow mesher:`. It reports compiler callbacks, sampled/skipped sections, packed vertices, failures, cache size, and average snapshot/Rust/copy-cache stage times. The default samples one in four callbacks to reduce the shadow-mode CPU tax.
-4. Investigate any `Native shadow meshing failed`, `Rust returned native error`, or mixin/bootstrap errors before further work. To disable shadow work completely, add `-Dwhatoptimizations.nativeMesher=false` to the launcher's JVM arguments. For a heavier every-section diagnostic run, use `-Dwhatoptimizations.nativeMesher.sampleRate=1`; values are clamped to 1–64. Sampling only reduces diagnostic overhead: it does not replace vanilla rendering or by itself speed up chunk compilation.
+3. In `logs/latest.log`, look for `Rust JNI smoke test completed successfully.` and a line beginning `Rust shadow mesher:`. It reports compiler callbacks, sampled/skipped sections, packed vertices, failures, cache size, and average snapshot/Rust/copy-cache stage times. The default samples one in eight callbacks to reduce the shadow-mode CPU tax.
+4. Investigate any `Native shadow meshing failed`, `Rust returned native error`, or mixin/bootstrap errors before further work. To disable shadow work completely, add `-Dwhatoptimizations.nativeMesher=false` to the launcher's JVM arguments. For a heavier every-section diagnostic run, use `-Dwhatoptimizations.nativeMesher.sampleRate=1`; use `-Dwhatoptimizations.nativeMesher.sampleRate=8` for the default sampling interval explicitly. Values are clamped to 1–64. Sampling only reduces diagnostic overhead: it does not replace vanilla rendering or by itself speed up chunk compilation.
 
 This first run is **integration validation, not a performance benchmark**: shadow meshing deliberately adds CPU work and does not yet replace any visible geometry.
 

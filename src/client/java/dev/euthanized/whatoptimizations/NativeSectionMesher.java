@@ -51,7 +51,7 @@ public final class NativeSectionMesher {
     // Shadow mode runs beside vanilla compilation. Sample by default to keep
     // diagnostics useful without duplicating the full CPU workload on every section.
     private static final int SAMPLE_RATE = Math.max(1,
-            Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 4)));
+            Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 8)));
     private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
     private static final AtomicLong SAMPLED_SECTIONS = new AtomicLong();
     private static final AtomicLong SAMPLED_OUT_SECTIONS = new AtomicLong();

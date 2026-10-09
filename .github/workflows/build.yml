@@ -22,8 +22,6 @@ jobs:
           java-version: '25'
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Normalize Rust source before CLI checks
-        run: cargo fmt --manifest-path native/Cargo.toml --all
       - name: Build through the committed Gradle wrapper
         run: ./gradlew build nativeTest nativeFormatCheck --stacktrace
       - name: Upload Linux-only smoke-test JAR
@@ -33,34 +31,6 @@ jobs:
           path: build/libs/what-optimizations-0.1.0.jar
           if-no-files-found: error
           retention-days: 14
-
-  rustfmt-writeback:
-    name: One-shot Rust formatting writeback
-    if: github.event_name == 'push' && github.ref == 'refs/heads/phase1/mesher-correctness-tests' && github.event.head_commit.message == 'Run one-shot Rust formatting writeback'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          persist-credentials: true
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Format Rust source
-        run: cargo fmt --manifest-path native/Cargo.toml --all
-      - name: Commit formatted Rust files
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add native/src
-          if git diff --cached --quiet; then
-            echo "Rust source already formatted"
-            exit 0
-          fi
-          git commit -m "Format Rust sources"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
 
   native:
     name: Native - ${{ matrix.os }}

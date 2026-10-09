@@ -27,7 +27,7 @@ The long-term goal is a replacement chunk-rendering pipeline whose CPU-heavy ren
 
 ## GPU ownership
 
-The renderer experiment in this branch has an initial OpenGL 3.3 path: Java owns shader setup, CPU-to-GPU vertex conversion, bounded 64 MiB arena uploads and resource bookkeeping; the render-thread pass can call Rust through OpenGL function pointers resolved with `glfwGetProcAddress`. The Rust call saves/restores the GL state it mutates and performs `glMultiDrawArrays`; the LWJGL draw call remains a fallback. Rayon workers never call GL. The user-requested Force-OpenGL preference mixins are active again on this branch.
+The renderer experiment in this branch has an initial OpenGL 3.3 path with optional GL 4.4 / `ARB_buffer_storage` immutable arena allocation (disabled unless `whatoptimizations.nativeRenderer.bufferStorage=true`): Java owns shader setup, CPU-to-GPU vertex conversion, bounded 64 MiB arena uploads and resource bookkeeping; the render-thread pass can call Rust through OpenGL function pointers resolved with `glfwGetProcAddress`. The Rust call saves/restores the GL state it mutates and performs `glMultiDrawArrays`; the LWJGL draw call remains a fallback. Rayon workers never call GL. The user-requested Force-OpenGL preference mixins are active again on this branch.
 
 This backend path is still unverified in an actual Minecraft 26.2 client. CI proves compilation and native tests, not that the target runtime selected OpenGL, that the pass draws into the intended target, or that every driver state is restored correctly. Any custom-backend assumptions must be isolated behind the adapter and verified against the exact target build.
 

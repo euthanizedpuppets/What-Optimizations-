@@ -18,6 +18,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(targets = "net.minecraft.client.renderer.chunk.SectionCompiler", remap = false)
 public abstract class SectionCompilerMesherMixin {
+    @Inject(method = "compile", at = @At("HEAD"))
+    private void whatOptimizations$startVanillaTiming(
+            SectionPos sectionPos,
+            RenderSectionRegion region,
+            VertexSorting vertexSorting,
+            SectionBufferBuilderPack builders,
+            CallbackInfoReturnable<SectionCompiler.Results> cir) {
+        NativeSectionMesher.beginVanillaCompileTiming();
+    }
+
     @Inject(method = "compile", at = @At("RETURN"))
     private void whatOptimizations$meshShadow(
             SectionPos sectionPos,
@@ -25,6 +35,7 @@ public abstract class SectionCompilerMesherMixin {
             VertexSorting vertexSorting,
             SectionBufferBuilderPack builders,
             CallbackInfoReturnable<SectionCompiler.Results> cir) {
+        NativeSectionMesher.endVanillaCompileTiming();
         NativeSectionMesher.compileShadow(sectionPos, region);
     }
 }

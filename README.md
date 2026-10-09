@@ -47,7 +47,7 @@ Local build prerequisites are Java 25, Gradle 9.7.0 for the resolved Loom 1.18.3
 
 ## Compatibility
 
-The mod prefers OpenGL because the proposed custom draw path targets OpenGL 3.3 core. Backend-selection mixins can conflict with other mods changing early graphics initialization. The section compiler hook is also likely to conflict with Sodium or other mods that replace vanilla chunk compilation. Do not combine them without an explicit compatibility layer.
+The OpenGL backend-selection mixins are deliberately not registered during Phase 1: shadow meshing issues no graphics calls and does not need to override the game's backend or edit `options.txt`. Revisit backend selection alongside the Phase 3 render-thread upload/draw path. The active section-compiler hook may conflict with Sodium or other mods that replace vanilla chunk compilation, so use a clean Fabric profile for the first test.
 
 ## Next stages
 

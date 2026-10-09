@@ -3,7 +3,7 @@
   "id": "what-optimizations",
   "version": "${version}",
   "name": "What Optimizations?",
-  "description": "A Rust-backed Minecraft 26.2 rendering experiment. Phase 0 scaffold only.",
+  "description": "A Rust-backed Minecraft 26.2 rendering experiment. Phase 1 native shadow mesher; vanilla rendering remains active.",
   "authors": [
     "euthanizedpuppets"
   ],

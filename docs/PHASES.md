@@ -6,12 +6,14 @@
 - [x] Rust cdylib using jni and rayon.
 - [x] Platform library extraction and System.load.
 - [x] Native.hello() smoke test.
-- [x] OpenGL preference mixins adapted from the concrete BackToGL 26.2 implementation.
+- [x] Draft OpenGL preference mixins adapted from the concrete BackToGL 26.2 implementation (kept out of the active Phase 1 mixin list until GPU drawing exists).
 - [x] Cross-platform GitHub Actions native build and mod JAR packaging.
 - [x] CI build passed.
 - [ ] In-game startup and actual backend preference still need verification.
 
 ## Phase 1 — conservative Rust section meshing (shadow mode)
+
+- [x] Deferred the OpenGL preference mixins during shadow mode; JNI meshing should not alter graphics-backend selection or rewrite `options.txt`.
 
 - [x] Generated exact Minecraft 26.2 sources with Loom genSources in CI.
 - [x] Verified real target: SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack).

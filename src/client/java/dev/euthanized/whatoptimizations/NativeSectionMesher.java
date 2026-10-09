@@ -2,7 +2,6 @@ package dev.euthanized.whatoptimizations;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,6 +44,8 @@ public final class NativeSectionMesher {
             () -> ByteBuffer.allocateDirect(MAX_INPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
     private static final ThreadLocal<ByteBuffer> OUTPUT_BUFFER = ThreadLocal.withInitial(
             () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
+    private static final ThreadLocal<SnapshotWorkspace> SNAPSHOT_WORKSPACE =
+            ThreadLocal.withInitial(SnapshotWorkspace::new);
 
     private static final boolean ENABLED =
             Boolean.parseBoolean(System.getProperty("whatoptimizations.nativeMesher", "true"));
@@ -148,11 +149,13 @@ public final class NativeSectionMesher {
         int minY = origin.getY();
         int minZ = origin.getZ();
 
-        HashMap<BlockState, Integer> paletteLookup = new HashMap<>(256);
-        ArrayList<PaletteRecord> palette = new ArrayList<>(256);
-        short[] cellPalette = new short[CELL_COUNT];
-        byte[] sky = new byte[CELL_COUNT];
-        byte[] block = new byte[CELL_COUNT];
+        SnapshotWorkspace workspace = SNAPSHOT_WORKSPACE.get();
+        HashMap<BlockState, Integer> paletteLookup = workspace.paletteLookup;
+        paletteLookup.clear();
+        short[] cellPalette = workspace.cellPalette;
+        byte[] sky = workspace.sky;
+        byte[] block = workspace.block;
+        int paletteCount = 0;
 
         LevelLightEngine lightEngine = region.getLightEngine();
         LayerLightEventListener skyLight = lightEngine.getLayerListener(LightLayer.SKY);
@@ -177,12 +180,14 @@ public final class NativeSectionMesher {
                                 && !state.hasBlockEntity();
 
                         int flags = (meshable ? FLAG_MESHABLE : 0) | (occludes ? FLAG_OCCLUDES : 0);
-                        paletteIndex = palette.size();
-                        if (paletteIndex >= CELL_COUNT || paletteIndex > Short.MAX_VALUE) {
+                        paletteIndex = paletteCount;
+                        if (paletteCount >= CELL_COUNT || paletteCount > Short.MAX_VALUE) {
                             throw new IllegalStateException("Section palette exceeded ABI limits");
                         }
                         paletteLookup.put(state, paletteIndex);
-                        palette.add(new PaletteRecord(stateId, flags));
+                        workspace.paletteStateIds[paletteCount] = stateId;
+                        workspace.paletteFlags[paletteCount] = (byte) flags;
+                        paletteCount++;
                     }
 
                     cellPalette[cell] = paletteIndex.shortValue();
@@ -194,7 +199,7 @@ public final class NativeSectionMesher {
         }
 
         int paletteOffset = HEADER_BYTES;
-        int cellsOffset = paletteOffset + palette.size() * PALETTE_ENTRY_BYTES;
+        int cellsOffset = paletteOffset + paletteCount * PALETTE_ENTRY_BYTES;
         int totalBytes = cellsOffset + CELL_COUNT * CELL_ENTRY_BYTES;
         ByteBuffer input = INPUT_BUFFER.get();
         if (totalBytes > input.capacity()) {
@@ -208,7 +213,7 @@ public final class NativeSectionMesher {
         input.putShort(8, (short) GRID);
         input.putShort(10, (short) GRID);
         input.putShort(12, (short) GRID);
-        input.putShort(14, (short) palette.size());
+        input.putShort(14, (short) paletteCount);
         input.putInt(16, CELL_COUNT);
         input.putShort(20, (short) PALETTE_ENTRY_BYTES);
         input.putShort(22, (short) CELL_ENTRY_BYTES);
@@ -218,9 +223,9 @@ public final class NativeSectionMesher {
         input.putInt(36, 0);
 
         input.position(paletteOffset);
-        for (PaletteRecord entry : palette) {
-            input.putInt(entry.stateId);
-            input.put((byte) entry.flags);
+        for (int i = 0; i < paletteCount; i++) {
+            input.putInt(workspace.paletteStateIds[i]);
+            input.put(workspace.paletteFlags[i]);
             input.put((byte) 0x3f);
             input.putShort((short) 0);
         }
@@ -254,13 +259,12 @@ public final class NativeSectionMesher {
         }
     }
 
-    private static final class PaletteRecord {
-        private final int stateId;
-        private final int flags;
-
-        private PaletteRecord(int stateId, int flags) {
-            this.stateId = stateId;
-            this.flags = flags;
-        }
+    private static final class SnapshotWorkspace {
+        private final HashMap<BlockState, Integer> paletteLookup = new HashMap<>(256);
+        private final short[] cellPalette = new short[CELL_COUNT];
+        private final byte[] sky = new byte[CELL_COUNT];
+        private final byte[] block = new byte[CELL_COUNT];
+        private final int[] paletteStateIds = new int[CELL_COUNT];
+        private final byte[] paletteFlags = new byte[CELL_COUNT];
     }
 }

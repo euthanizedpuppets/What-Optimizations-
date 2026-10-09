@@ -12,7 +12,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::slice;
 use std::sync::OnceLock;
 
-const MAGIC: u32 = u32::from_le_bytes(*b"WOM1");
+const MAGIC: u32 = u32::from_ne_bytes(*b"WOM1");
 const VERSION: u16 = 1;
 const HEADER_BYTES: usize = 40;
 const GRID: usize = 18;
@@ -111,13 +111,13 @@ fn pool() -> &'static rayon::ThreadPool {
 fn read_u16(data: &[u8], offset: usize) -> Option<u16> {
     let end = offset.checked_add(2)?;
     let s = data.get(offset..end)?;
-    Some(u16::from_le_bytes([s[0], s[1]]))
+    Some(u16::from_ne_bytes([s[0], s[1]]))
 }
 
 fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
     let end = offset.checked_add(4)?;
     let s = data.get(offset..end)?;
-    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    Some(u32::from_ne_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 fn grid_index(x: usize, y: usize, z: usize) -> usize {
@@ -521,6 +521,8 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_meshSection0
 ) -> jint {
     catch_unwind(AssertUnwindSafe(|| mesh_jni(env, input, output))).unwrap_or(ERR_PANIC)
 }
+
+mod async_jobs;
 
 #[cfg(test)]
 mod tests {

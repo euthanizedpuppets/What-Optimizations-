@@ -151,7 +151,10 @@ final class NativeOpenGLRenderer {
                 }
             }
 
-            NativeRendererControls.setVisibilityCounts(draws, metadata.size());
+            int visibleForOverlay = visibleCount >= 0 && visibleCount <= metadata.size()
+                    ? visibleCount
+                    : draws;
+            NativeRendererControls.setVisibilityCounts(visibleForOverlay, metadata.size());
             if (draws == 0) {
                 return;
             }

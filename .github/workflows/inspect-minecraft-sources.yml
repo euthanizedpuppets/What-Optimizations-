@@ -49,6 +49,7 @@ jobs:
               "GameRenderer.java",
               "LevelRenderer.java",
               "RenderSystem.java",
+              "MeshData.java",
           }
           found = {}
           scanned = 0
@@ -85,7 +86,7 @@ jobs:
                   lines = source.splitlines()
                   if name == "SectionCompiler.java":
                       ranges = [(0, len(lines))]
-                  elif name == "RenderSectionRegion.java":
+                  elif name in {"RenderSectionRegion.java", "MeshData.java"}:
                       ranges = [(0, len(lines))]
                   elif name == "SectionRenderDispatcher.java":
                       needles = ["compileAsync(", "compileSync(", "class RenderSection", "class CompileTask", "sectionCompiler.compile(", "void rebuildSectionAsync", "CompletableFuture"]

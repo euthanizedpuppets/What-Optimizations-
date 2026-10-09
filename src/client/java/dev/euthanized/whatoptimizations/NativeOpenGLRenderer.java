@@ -97,9 +97,11 @@ final class NativeOpenGLRenderer {
             records.position(VISIBILITY_HEADER);
             for (NativeSectionMeshCache.SectionMetadata section : metadata) {
                 long key = section.sectionKey();
-                records.putInt(unpackX(key));
-                records.putInt(unpackY(key));
-                records.putInt(unpackZ(key));
+                // Rust visibility nodes use world-space block origins and
+                // 16-block AABBs. SectionPos keys contain section coordinates.
+                records.putInt(unpackX(key) << 4);
+                records.putInt(unpackY(key) << 4);
+                records.putInt(unpackZ(key) << 4);
                 records.put((byte) section.openFaces());
                 records.put((byte) 0);
                 records.putShort((short) 0);

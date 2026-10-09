@@ -634,7 +634,8 @@ mod tests {
     #[test]
     fn inconsistent_total_byte_count_is_rejected() {
         let mut input = fixture(&[[8, 8, 8]]);
-        input[32..36].copy_from_slice(&((input.len() - 1) as u32).to_le_bytes());
+        let incorrect_total = (input.len() - 1) as u32;
+        input[32..36].copy_from_slice(&incorrect_total.to_le_bytes());
         let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
         assert_eq!(mesh_section(&input, &mut output), Err(ERR_BAD_HEADER));
     }

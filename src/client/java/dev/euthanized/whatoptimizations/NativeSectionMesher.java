@@ -74,6 +74,9 @@ public final class NativeSectionMesher {
     private static final AtomicLong LAST_FAILURE_LOG = new AtomicLong();
     private static final AtomicLong GENERATION_SEQUENCE = new AtomicLong();
     private static final AtomicLong STALE_RESULTS = new AtomicLong();
+    private static final AtomicLong VANILLA_COMPILE_NANOS = new AtomicLong();
+    private static final AtomicLong VANILLA_COMPILE_COUNT = new AtomicLong();
+    private static final ThreadLocal<Long> VANILLA_COMPILE_START = new ThreadLocal<>();
     private static final int MAX_PENDING_JOBS = 64;
     private static final ConcurrentMap<Long, PendingJob> PENDING = new ConcurrentHashMap<>();
     private static final Map<Long, Long> LATEST_GENERATION =
@@ -115,6 +118,39 @@ public final class NativeSectionMesher {
 
     public static boolean isDebugMode() {
         return DEBUG_MODE;
+    }
+
+    public static void beginVanillaCompileTiming() {
+        VANILLA_COMPILE_START.set(System.nanoTime());
+    }
+
+    public static void endVanillaCompileTiming() {
+        Long started = VANILLA_COMPILE_START.get();
+        VANILLA_COMPILE_START.remove();
+        if (started != null) {
+            VANILLA_COMPILE_NANOS.addAndGet(System.nanoTime() - started);
+            VANILLA_COMPILE_COUNT.incrementAndGet();
+        }
+    }
+
+    public static long averageSnapshotMicros() {
+        return SNAPSHOT_NANOS.get() / Math.max(1L, SAMPLED_SECTIONS.get()) / 1_000L;
+    }
+
+    public static long averageNativeQueueMicros() {
+        return NATIVE_NANOS.get() / Math.max(1L, COMPILED_SECTIONS.get()) / 1_000L;
+    }
+
+    public static long averageCopyCacheMicros() {
+        return COPY_CACHE_NANOS.get() / Math.max(1L, COMPILED_SECTIONS.get()) / 1_000L;
+    }
+
+    public static long averageVanillaCompileMicros() {
+        return VANILLA_COMPILE_NANOS.get() / Math.max(1L, VANILLA_COMPILE_COUNT.get()) / 1_000L;
+    }
+
+    public static long callbacks() {
+        return SECTION_CALLBACKS.get();
     }
 
     public static int pendingJobs() {

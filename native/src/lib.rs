@@ -578,6 +578,67 @@ mod tests {
         assert_eq!(mesh_section(&input, &mut output), Err(ERR_BAD_PALETTE_INDEX));
     }
 
+
+    #[test]
+    fn single_cube_emits_all_six_faces_with_valid_local_coordinates() {
+        let input = fixture(&[[8, 8, 8]]);
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        let vertices = mesh_section(&input, &mut output).unwrap();
+        assert_eq!(vertices, 36);
+
+        let mut face_counts = [0usize; 6];
+        for vertex in output[..vertices * VERTEX_STRIDE].chunks_exact(VERTEX_STRIDE) {
+            assert!(vertex[0] <= 16 && vertex[1] <= 16 && vertex[2] <= 16);
+            let face = vertex[3] as usize;
+            assert!(face < face_counts.len());
+            face_counts[face] += 1;
+        }
+        assert_eq!(face_counts, [6; 6]);
+    }
+
+    #[test]
+    fn adjacent_cubes_merge_along_each_axis() {
+        for solids in [
+            [[8, 8, 8], [9, 8, 8]],
+            [[8, 8, 8], [8, 9, 8]],
+            [[8, 8, 8], [8, 8, 9]],
+        ] {
+            let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+            assert_eq!(mesh_section(&fixture(&solids), &mut output).unwrap(), 36);
+        }
+    }
+
+    #[test]
+    fn solid_two_by_two_by_two_box_collapses_to_six_quads() {
+        let mut solids = Vec::new();
+        for x in 7..=8 {
+            for y in 7..=8 {
+                for z in 7..=8 {
+                    solids.push([x, y, z]);
+                }
+            }
+        }
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(mesh_section(&fixture(&solids), &mut output).unwrap(), 36);
+    }
+
+    #[test]
+    fn diagonal_cubes_keep_separate_surfaces() {
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(
+            mesh_section(&fixture(&[[7, 7, 7], [8, 8, 8]]), &mut output).unwrap(),
+            72
+        );
+    }
+
+    #[test]
+    fn inconsistent_total_byte_count_is_rejected() {
+        let mut input = fixture(&[[8, 8, 8]]);
+        input[32..36].copy_from_slice(&((input.len() - 1) as u32).to_le_bytes());
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(mesh_section(&input, &mut output), Err(ERR_BAD_HEADER));
+    }
+
     #[test]
     fn too_small_output_is_rejected() {
         let input = fixture(&[[8, 8, 8]]);

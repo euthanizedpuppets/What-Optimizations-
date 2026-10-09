@@ -525,7 +525,7 @@ mod tests {
             data[p + 2] = 15;
         }
         for xyz in solids {
-            let p = cells_offset + grid_index(xyz[0], xyz[1], xyz[2]) * CELL_ENTRY_BYTES;
+            let p = cells_offset + grid_index(xyz[0] + 1, xyz[1] + 1, xyz[2] + 1) * CELL_ENTRY_BYTES;
             data[p..p + 2].copy_from_slice(&1u16.to_le_bytes());
         }
         data

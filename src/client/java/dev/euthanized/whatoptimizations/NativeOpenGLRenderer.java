@@ -102,7 +102,6 @@ final class NativeOpenGLRenderer {
                 records.put((byte) section.openFaces());
                 records.put((byte) 0);
                 records.putShort((short) 0);
-                records.putInt(0);
             }
             records.position(0);
 

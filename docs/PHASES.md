@@ -4,7 +4,7 @@
 
 - [x] Fabric / Gradle scaffold for Minecraft 26.2 and Java 25.
 - [x] Rust `cdylib`, JNI binding, platform library extraction/loading and smoke test.
-- [x] Add the `What?.png` icon to mod resources and `fabric.mod.json`.
+- [x] Add the `What.png` icon to mod resources and `fabric.mod.json`.
 - [x] Gradle 9.7.0 wrapper plus `nativeTest` and `nativeFormatCheck` tasks for CLI use.
 - [x] Force-OpenGL preference mixins are active in this experiment branch, as required by the GL 3.3 path.
 - [ ] Verify OpenGL backend selection and startup behavior in an actual Minecraft client.

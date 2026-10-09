@@ -34,7 +34,17 @@ public final class NativeSectionMesher {
     private static final int VERSION = 1;
     private static final int FLAG_MESHABLE = 1;
     private static final int FLAG_OCCLUDES = 2;
+    private static final int MAX_INPUT_BYTES = HEADER_BYTES
+            + CELL_COUNT * PALETTE_ENTRY_BYTES
+            + CELL_COUNT * CELL_ENTRY_BYTES;
     private static final int MAX_OUTPUT_BYTES = 1_200_000;
+
+    // Section compilation is worker-threaded. Reuse bounded direct buffers per
+    // worker to avoid a 1.2 MiB native allocation for every section compile.
+    private static final ThreadLocal<ByteBuffer> INPUT_BUFFER = ThreadLocal.withInitial(
+            () -> ByteBuffer.allocateDirect(MAX_INPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
+    private static final ThreadLocal<ByteBuffer> OUTPUT_BUFFER = ThreadLocal.withInitial(
+            () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
 
     private static final boolean ENABLED =
             Boolean.parseBoolean(System.getProperty("whatoptimizations.nativeMesher", "true"));
@@ -53,7 +63,8 @@ public final class NativeSectionMesher {
 
         try {
             ByteBuffer input = snapshot(sectionPos, region);
-            ByteBuffer output = ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer output = OUTPUT_BUFFER.get();
+            output.clear();
             int vertexCount = Native.meshSection(input, output);
             if (vertexCount < 0) {
                 recordFailure("Rust returned native error " + vertexCount, null);
@@ -145,7 +156,11 @@ public final class NativeSectionMesher {
         int paletteOffset = HEADER_BYTES;
         int cellsOffset = paletteOffset + palette.size() * PALETTE_ENTRY_BYTES;
         int totalBytes = cellsOffset + CELL_COUNT * CELL_ENTRY_BYTES;
-        ByteBuffer input = ByteBuffer.allocateDirect(totalBytes).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer input = INPUT_BUFFER.get();
+        if (totalBytes > input.capacity()) {
+            throw new IllegalStateException("Section snapshot exceeded reusable direct-buffer capacity");
+        }
+        input.clear();
 
         input.putInt(0, MAGIC);
         input.putShort(4, (short) VERSION);

@@ -27,9 +27,9 @@ The long-term goal is a replacement chunk-rendering pipeline whose CPU-heavy ren
 
 ## GPU ownership
 
-The eventual renderer should own its mesh storage and draw batching, with graphics commands issued only on the render thread while a valid graphics context is current. Rust may prepare upload packets or allocator plans on workers, but worker threads must not make OpenGL calls. Direct Rust-side graphics calls are optional and come later, only if their context/thread lifetime can be proven and all changed graphics state is restored.
+The renderer experiment in this branch has an initial OpenGL 3.3 path: Java owns shader setup, CPU-to-GPU vertex conversion, bounded 64 MiB arena uploads and resource bookkeeping; the render-thread pass can call Rust through OpenGL function pointers resolved with `glfwGetProcAddress`. The Rust call saves/restores the GL state it mutates and performs `glMultiDrawArrays`; the LWJGL draw call remains a fallback. Rayon workers never call GL. The user-requested Force-OpenGL preference mixins are active again on this branch.
 
-Do not force a graphics backend during shadow mode. First verify which rendering backend and public/loader-facing integration path the target Minecraft 26.2 runtime actually uses. Any custom backend assumptions must be isolated behind an adapter and tested against the exact target build.
+This backend path is still unverified in an actual Minecraft 26.2 client. CI proves compilation and native tests, not that the target runtime selected OpenGL, that the pass draws into the intended target, or that every driver state is restored correctly. Any custom-backend assumptions must be isolated behind the adapter and verified against the exact target build.
 
 ## Mesh fidelity before vanilla replacement
 
@@ -69,7 +69,7 @@ Extend the ABI only after writing fixtures and tests for each new record type. C
 
 ### Gate C — Rust upload and draw prototype
 
-On the render thread, upload only sections known to be representable, behind an opt-in JVM/system property. Keep vanilla meshes active as fallback for unsupported sections. Add explicit allocator budgets and deterministic resource cleanup. Do not enable automatic full replacement yet.
+A first opt-in GL diagnostic pass now exists: a bounded arena, section suballocator, cache uploads, native frustum/portal visibility, `glMultiDrawArrays`, F7/F8/F9 controls, and a pseudo-color overlay for the restricted opaque-cube mesh. Vanilla's real meshes and draws remain active. Next, validate the pass in game, strengthen resource cleanup and visibility invalidation, and then add model/material data. Do not enable automatic full replacement yet.
 
 ### Gate D — visible replacement in a clean test profile
 

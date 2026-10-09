@@ -59,6 +59,34 @@ public final class Native {
     }
 
     /**
+     * Runs glMultiDrawArrays from Rust through GLFW-resolved OpenGL entry points.
+     * Call only on the render thread with a current OpenGL context.
+     */
+    public static int drawMultiDrawOpenGL(
+            int program,
+            int vao,
+            int arrayBuffer,
+            ByteBuffer firsts,
+            ByteBuffer counts,
+            int drawCount,
+            long[] procedures) {
+        if (!direct(firsts) || !direct(counts) || procedures == null || drawCount < 0
+                || (long) drawCount * Integer.BYTES > firsts.capacity()
+                || (long) drawCount * Integer.BYTES > counts.capacity()) {
+            return -2;
+        }
+        NativeLoader.ensureLoaded();
+        return drawMultiDrawOpenGL0(
+                program,
+                vao,
+                arrayBuffer,
+                firsts.order(ByteOrder.nativeOrder()),
+                counts.order(ByteOrder.nativeOrder()),
+                drawCount,
+                procedures);
+    }
+
+    /**
      * Native frustum/cave-graph visibility. Input/output records are documented
      * in docs/RUST_RENDERER_ARCHITECTURE.md and use native-endian direct buffers.
      */
@@ -103,4 +131,13 @@ public final class Native {
             int cameraX,
             int cameraY,
             int cameraZ);
+
+    private static native int drawMultiDrawOpenGL0(
+            int program,
+            int vao,
+            int arrayBuffer,
+            ByteBuffer firsts,
+            ByteBuffer counts,
+            int drawCount,
+            long[] procedures);
 }

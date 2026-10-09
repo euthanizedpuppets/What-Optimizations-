@@ -632,6 +632,56 @@ mod tests {
     }
 
     #[test]
+    fn single_cube_triangles_have_outward_winding() {
+        let input = fixture(&[[8, 8, 8]]);
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        let vertices = mesh_section(&input, &mut output).unwrap();
+        assert_eq!(vertices, 36);
+
+        for triangle in output[..vertices * VERTEX_STRIDE]
+            .chunks_exact(3 * VERTEX_STRIDE)
+        {
+            let face = triangle[3] as usize;
+            let point = |offset: usize| -> [i32; 3] {
+                [
+                    triangle[offset] as i32,
+                    triangle[offset + 1] as i32,
+                    triangle[offset + 2] as i32,
+                ]
+            };
+            let a = point(0);
+            let b = point(VERTEX_STRIDE);
+            let c = point(2 * VERTEX_STRIDE);
+            let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let cross = [
+                ab[1] * ac[2] - ab[2] * ac[1],
+                ab[2] * ac[0] - ab[0] * ac[2],
+                ab[0] * ac[1] - ab[1] * ac[0],
+            ];
+            let (axis, direction) = match face {
+                0 => (0, -1),
+                1 => (0, 1),
+                2 => (1, -1),
+                3 => (1, 1),
+                4 => (2, -1),
+                5 => (2, 1),
+                _ => panic!("unexpected face ID {face}"),
+            };
+
+            assert!(
+                cross[axis] * direction > 0,
+                "triangle winding points inward for face {face}: {cross:?}"
+            );
+            for (component, value) in cross.iter().enumerate() {
+                if component != axis {
+                    assert_eq!(*value, 0, "face {face} has a non-axis-aligned normal");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn inconsistent_total_byte_count_is_rejected() {
         let mut input = fixture(&[[8, 8, 8]]);
         let incorrect_total = (input.len() - 1) as u32;

@@ -11,20 +11,17 @@ permissions:
 
 jobs:
   native:
-    name: Native - ${{ matrix.platform }}
+    name: Native - ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: ubuntu-latest
-            platform: linux-x86_64
-            library: libwhat_optimizations_native.so
+            os: linux
           - runner: windows-latest
-            platform: windows-x86_64
-            library: what_optimizations_native.dll
+            os: windows
           - runner: macos-latest
-            platform: macos-aarch64
-            library: libwhat_optimizations_native.dylib
+            os: macos
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -36,15 +33,26 @@ jobs:
         run: cargo test --manifest-path native/Cargo.toml
       - name: Build optimized native library
         run: cargo build --release --manifest-path native/Cargo.toml
-      - name: Stage native artifact
+      - name: Stage native artifact for the actual runner architecture
         shell: bash
         run: |
-          mkdir -p "build/native-output/natives/${{ matrix.platform }}"
-          cp "native/target/release/${{ matrix.library }}" "build/native-output/natives/${{ matrix.platform }}/"
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          case "$host" in
+            x86_64-unknown-linux-gnu) platform=linux-x86_64; library=libwhat_optimizations_native.so ;;
+            aarch64-unknown-linux-gnu) platform=linux-aarch64; library=libwhat_optimizations_native.so ;;
+            x86_64-pc-windows-msvc|x86_64-pc-windows-gnu) platform=windows-x86_64; library=what_optimizations_native.dll ;;
+            aarch64-pc-windows-msvc) platform=windows-aarch64; library=what_optimizations_native.dll ;;
+            aarch64-apple-darwin) platform=macos-aarch64; library=libwhat_optimizations_native.dylib ;;
+            x86_64-apple-darwin) platform=macos-x86_64; library=libwhat_optimizations_native.dylib ;;
+            *) echo "Unsupported CI Rust target: $host"; exit 1 ;;
+          esac
+          mkdir -p "build/native-output/natives/$platform"
+          cp "native/target/release/$library" "build/native-output/natives/$platform/"
+          echo "Staged $library for $platform"
       - name: Upload native library
         uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.platform }}
+          name: native-${{ matrix.os }}
           path: build/native-output/
           if-no-files-found: error
           retention-days: 14

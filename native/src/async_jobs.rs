@@ -356,7 +356,7 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_visibleSecti
             Some(value) => value,
             None => return ERR_VISIBILITY_ABI,
         };
-        if VISIBILITY_HEADER_BYTES.checked_add(records_bytes) != Some(sections_len)
+        if VISIBILITY_HEADER_BYTES.checked_add(records_bytes).map_or(true, |required| required > sections_len)
             || count.checked_mul(4).map_or(true, |bytes| bytes > output_len)
         {
             return ERR_VISIBILITY_ABI;
@@ -401,7 +401,7 @@ mod async_visibility_tests {
     #[test]
     fn frustum_culling_rejects_outside_section() {
         let planes = [
-            [1.0, 0.0, 0.0, -20.0], [-1.0, 0.0, 0.0, 100.0],
+            [1.0, 0.0, 0.0, 0.0], [-1.0, 0.0, 0.0, 31.0],
             [0.0, 1.0, 0.0, 100.0], [0.0, -1.0, 0.0, 100.0],
             [0.0, 0.0, 1.0, 100.0], [0.0, 0.0, -1.0, 100.0],
         ];

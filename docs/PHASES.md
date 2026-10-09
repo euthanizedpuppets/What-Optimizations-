@@ -27,10 +27,16 @@
 - [x] Initial approximate AO/light corner sampling.
 - [x] Bounded 16 MiB native output cache.
 - [x] Default 1-in-8 shadow sampling and stage-time diagnostics to limit duplicated CPU work and measure snapshot, native meshing, and cache-copy costs.
+- [x] Reuse snapshot arrays, palette lookup capacity, and palette scalar storage per section worker.
+- [x] Reduce per-direction native output reservation and keep the fixed greedy mask on the stack.
+- [x] Compute corner AO/light from one shared 3×3 neighborhood for each exposed face.
+- [x] Cap Rayon to two helper threads to reduce competition with Minecraft's workers.
+- [x] Skip light sampling/JNI/Rust for sections containing no eligible interior opaque cubes; invalidate any stale shadow-cache entry.
 - [x] Unit tests: empty section, isolated cube, adjacent-cube greedy merge on all axes, solid 2×2×2 greedy merge, diagonal non-merge, padded-neighbor culling, six-face/local-coordinate validation, outward triangle winding, malformed header/total size, invalid palette index, insufficient output buffer.
 - [ ] CI compile/tests must pass for this Phase 1 commit.
 - [x] Run Minecraft 26.2 successfully: thousands of sampled sections, zero native failures, and cache use below the 16 MiB bound.
-- [ ] Use per-stage timings to target snapshot allocation/light sampling, native meshing, and cache-copy overhead.
+- [ ] Use per-stage timings to target remaining snapshot/state/light sampling and native meshing overhead.
+- [ ] Profile integrated-server ticking separately; the current native section hook does not optimize game simulation ticks.
 - [ ] Compare AO/light values against vanilla.
 - [ ] Upload/draw, correct atlas UVs, biome tint, material/render-layer identity, non-cube model handling and block entity rendering are not implemented.
 

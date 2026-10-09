@@ -12,6 +12,10 @@ The Phase 0 build scaffold passes GitHub Actions. Phase 1 now intercepts the ver
 - An 18×18×18 snapshot containing state IDs, palette flags, and block/sky light values.
 - Rust face occlusion, greedy coplanar rectangle merging, initial corner AO/light sampling, and a 16-byte vertex stride.
 - A 16 MiB access-ordered CPU cache for native output.
+- Reused per-worker snapshot arrays and palette storage to cut per-section allocation churn.
+- Rust reuses a fixed greedy mask on the stack, starts output vectors with a smaller reserve, and samples a face's 3×3 lighting/AO neighborhood once.
+- The native helper pool is capped at two threads to leave more CPU headroom for Minecraft workers and integrated-server ticking.
+- Sections without meshable opaque interior cubes skip light sampling, JNI, and Rust meshing; their cached shadow output is invalidated.
 - GitHub Actions compiles native code and packages the platform libraries inside the Fabric mod JAR.
 - Shadow work is sampled by default: one in every eight section-compiler callbacks. Logs include averaged snapshot, JNI/Rust, and copy/cache timings so the duplicate work can be quantified.
 
@@ -38,7 +42,9 @@ Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris 
 3. In `logs/latest.log`, look for `Rust JNI smoke test completed successfully.` and a line beginning `Rust shadow mesher:`. It reports compiler callbacks, sampled/skipped sections, packed vertices, failures, cache size, and average snapshot/Rust/copy-cache stage times. The default samples one in eight callbacks to reduce the shadow-mode CPU tax.
 4. Investigate any `Native shadow meshing failed`, `Rust returned native error`, or mixin/bootstrap errors before further work. To disable shadow work completely, add `-Dwhatoptimizations.nativeMesher=false` to the launcher's JVM arguments. For a heavier every-section diagnostic run, use `-Dwhatoptimizations.nativeMesher.sampleRate=1`; use `-Dwhatoptimizations.nativeMesher.sampleRate=8` for the default sampling interval explicitly. Values are clamped to 1–64. Sampling only reduces diagnostic overhead: it does not replace vanilla rendering or by itself speed up chunk compilation.
 
-This first run is **integration validation, not a performance benchmark**: shadow meshing deliberately adds CPU work and does not yet replace any visible geometry.
+The native path samples one in eight section callbacks by default. Snapshot workspace reuse, lower Rust scratch allocation, shared face-neighborhood sampling, a two-thread native pool, and an empty-section fast path reduce the cost of shadow diagnostics.
+
+This remains **integration validation, not a claim of faster rendering**: vanilla still builds and renders its mesh, and server-tick performance must be profiled independently.
 
 ## Get the build
 

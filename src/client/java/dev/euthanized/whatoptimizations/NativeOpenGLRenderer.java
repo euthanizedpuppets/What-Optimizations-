@@ -17,6 +17,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL33C;
+import org.lwjgl.opengl.GL44C;
 import org.lwjgl.system.MemoryStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -308,7 +309,24 @@ final class NativeOpenGLRenderer {
         vbo = GL33C.glGenBuffers();
         GL33C.glBindVertexArray(vao);
         GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
-        GL33C.glBufferData(GL33C.GL_ARRAY_BUFFER, (long) ARENA_BYTES, GL33C.GL_DYNAMIC_DRAW);
+        int glMajor = GL33C.glGetInteger(GL33C.GL_MAJOR_VERSION);
+        int glMinor = GL33C.glGetInteger(GL33C.GL_MINOR_VERSION);
+        boolean bufferStorageAvailable = glMajor > 4
+                || (glMajor == 4 && glMinor >= 4)
+                || GLFW.glfwExtensionSupported("GL_ARB_buffer_storage");
+        boolean useImmutableStorage = bufferStorageAvailable
+                && Boolean.getBoolean("whatoptimizations.nativeRenderer.bufferStorage");
+        if (useImmutableStorage) {
+            // GL 4.4 / ARB_buffer_storage fast path. DYNAMIC_STORAGE_BIT keeps
+            // glBufferSubData legal; GL 3.3 always retains the mutable fallback.
+            GL44C.glBufferStorage(
+                    GL33C.GL_ARRAY_BUFFER, (long) ARENA_BYTES, GL44C.GL_DYNAMIC_STORAGE_BIT);
+        } else {
+            GL33C.glBufferData(GL33C.GL_ARRAY_BUFFER, (long) ARENA_BYTES, GL33C.GL_DYNAMIC_DRAW);
+        }
+        LOGGER.info(
+                "Native GL {}.{} core path; ARB_buffer_storage available={} selected={}",
+                glMajor, glMinor, bufferStorageAvailable, useImmutableStorage);
         GL33C.glEnableVertexAttribArray(0);
         GL33C.glVertexAttribPointer(0, 3, GL33C.GL_FLOAT, false, GPU_VERTEX_STRIDE, 0L);
         GL33C.glEnableVertexAttribArray(1);

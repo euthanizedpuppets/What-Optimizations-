@@ -18,7 +18,7 @@ Chunk meshing, visibility, and custom drawing are not implemented yet. Those are
 
 Open the repository's Actions tab, select the latest successful Build workflow run, and download the minecraft-mod-jar artifact. Put the resulting mod jar in the 26.2 Fabric instance's mods directory. The jar embeds the platform libraries built by that workflow.
 
-A local build requires Java 25, Gradle 9.5.1 or newer compatible with the configured Loom release, and the Rust toolchain with Cargo. Run gradle build; this compiles the native library for the current host and bundles it.
+A local build requires Java 25, Gradle 9.7.0 for the currently resolved Fabric Loom 1.18.3 plugin, and the Rust toolchain with Cargo. Run gradle build; this compiles the native library for the current host and bundles it.
 
 ## Compatibility warning
 

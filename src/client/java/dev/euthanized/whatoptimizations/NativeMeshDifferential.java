@@ -94,7 +94,7 @@ final class NativeMeshDifferential {
                     - (xs[1] - xs[0]) * (zs[2] - zs[0]);
             float nz = (xs[1] - xs[0]) * (ys[2] - ys[0])
                     - (ys[1] - ys[0]) * (xs[2] - xs[0]);
-            direction = axis == 0 ? nx : axis == 1 ? ny : nz;
+            float direction = axis == 0 ? nx : axis == 1 ? ny : nz;
             if (Math.abs(direction) < EPSILON) {
                 continue;
             }

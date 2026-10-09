@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native - ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x86_64
+            library: libwhat_optimizations_native.so
+          - runner: windows-latest
+            platform: windows-x86_64
+            library: what_optimizations_native.dll
+          - runner: macos-latest
+            platform: macos-aarch64
+            library: libwhat_optimizations_native.dylib
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Check formatting
+        run: cargo fmt --manifest-path native/Cargo.toml -- --check
+      - name: Test native crate
+        run: cargo test --manifest-path native/Cargo.toml
+      - name: Build optimized native library
+        run: cargo build --release --manifest-path native/Cargo.toml
+      - name: Stage native artifact
+        shell: bash
+        run: |
+          mkdir -p "build/native-output/natives/${{ matrix.platform }}"
+          cp "native/target/release/${{ matrix.library }}" "build/native-output/natives/${{ matrix.platform }}/"
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: build/native-output/
+          if-no-files-found: error
+          retention-days: 14
+
+  mod-jar:
+    name: Build Minecraft mod jar
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all native platform libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: build/generated/nativeResources
+          merge-multiple: true
+      - name: Install Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Build mod and bundle native libraries
+        run: gradle build --stacktrace
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-mod-jar
+          path: build/libs/what-optimizations-0.1.0.jar
+          if-no-files-found: error
+          retention-days: 14

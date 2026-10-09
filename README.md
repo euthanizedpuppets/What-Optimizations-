@@ -28,6 +28,17 @@ Only full opaque model cubes without fluids or block entities are admitted to th
 
 The initial AO and light samples are approximate and require visual/numeric comparison with vanilla before the native geometry may be used for actual rendering. Block state IDs currently stand in as material keys; they do not yet encode block atlas UVs, biome tint, shader/render-layer identity, or special vertex attributes.
 
+## First in-game smoke test
+
+Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris or other renderer replacements for the first run. Back up any test world before launching.
+
+1. Download `minecraft-mod-jar` from the latest **successful** GitHub Actions Build run and put the JAR in the instance's `mods` folder.
+2. Launch once, create or open a test world, and travel through a few chunk sections. Vanilla is still rendering the world; the Rust mesh is diagnostic shadow data only.
+3. In `logs/latest.log`, look for `Rust JNI smoke test completed successfully.` and a line beginning `Rust shadow mesher:`. The latter reports completed sections, packed vertices, failures, and cache size.
+4. Investigate any `Native shadow meshing failed`, `Rust returned native error`, or mixin/bootstrap errors before further work. If the extra shadow work causes severe hitching, add `-Dwhatoptimizations.nativeMesher=false` to the launcher's JVM arguments to disable the mesher while keeping the vanilla renderer active.
+
+This first run is **integration validation, not a performance benchmark**: shadow meshing deliberately adds CPU work and does not yet replace any visible geometry.
+
 ## Get the build
 
 Open the repository's Actions tab, choose the latest successful Build run, and download the minecraft-mod-jar artifact. Extract the artifact ZIP and put its JAR in the Minecraft 26.2 Fabric instance's mods directory. The JAR contains the native binaries produced by CI.

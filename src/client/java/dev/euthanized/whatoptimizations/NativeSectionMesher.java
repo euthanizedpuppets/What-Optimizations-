@@ -89,11 +89,12 @@ public final class NativeSectionMesher {
 
             long sectionCount = COMPILED_SECTIONS.incrementAndGet();
             OUTPUT_VERTICES.addAndGet(vertexCount);
-            if ((sectionCount & 255L) == 0L) {
+            if (sectionCount == 1L || (sectionCount & 255L) == 0L) {
                 LOGGER.info(
-                        "Rust shadow mesher: {} sections, {} packed vertices, {} cached sections / {} MiB; vanilla rendering remains active",
+                        "Rust shadow mesher: {} sections, {} packed vertices, {} failed sections, {} cached sections / {} MiB; vanilla rendering remains active",
                         sectionCount,
                         OUTPUT_VERTICES.get(),
+                        FAILED_SECTIONS.get(),
                         NativeSectionMeshCache.sectionCount(),
                         NativeSectionMeshCache.cachedBytes() / (1024L * 1024L));
             }

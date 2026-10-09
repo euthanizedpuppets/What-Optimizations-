@@ -24,9 +24,9 @@
 - [x] Emits 16-byte triangle-list vertices compatible with OpenGL 3.3 topology.
 - [x] Initial approximate AO/light corner sampling.
 - [x] Bounded 16 MiB native output cache.
-- [x] Unit tests: empty section, isolated cube, adjacent-cube greedy merge, padded-neighbor culling, malformed header, invalid palette index, insufficient output buffer.
+- [x] Unit tests: empty section, isolated cube, adjacent-cube greedy merge on all axes, solid 2×2×2 greedy merge, diagonal non-merge, padded-neighbor culling, six-face/local-coordinate validation, outward triangle winding, malformed header/total size, invalid palette index, insufficient output buffer.
 - [ ] CI compile/tests must pass for this Phase 1 commit.
-- [ ] Run Minecraft 26.2 and check native meshing logs with known arrangements.
+- [ ] Run Minecraft 26.2 and check native meshing logs with known arrangements (see README smoke-test checklist).
 - [ ] Compare AO/light values against vanilla.
 - [ ] Upload/draw, correct atlas UVs, biome tint, material/render-layer identity, non-cube model handling and block entity rendering are not implemented.
 

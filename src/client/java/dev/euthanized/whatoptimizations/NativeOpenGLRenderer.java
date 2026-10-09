@@ -3,7 +3,6 @@ package dev.euthanized.whatoptimizations;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -16,7 +15,6 @@ import java.util.TreeMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL33C;
 import org.lwjgl.system.MemoryStack;
@@ -41,10 +39,18 @@ final class NativeOpenGLRenderer {
             () -> ByteBuffer.allocateDirect(96).order(ByteOrder.nativeOrder()));
     private static final ThreadLocal<ByteBuffer> VISIBILITY_OUTPUT = ThreadLocal.withInitial(
             () -> ByteBuffer.allocateDirect(MAX_METADATA * 4).order(ByteOrder.nativeOrder()));
-    private static final ThreadLocal<IntBuffer> FIRSTS = ThreadLocal.withInitial(
-            () -> BufferUtils.createIntBuffer(MAX_METADATA));
-    private static final ThreadLocal<IntBuffer> COUNTS = ThreadLocal.withInitial(
-            () -> BufferUtils.createIntBuffer(MAX_METADATA));
+    private static final ThreadLocal<ByteBuffer> FIRSTS = ThreadLocal.withInitial(
+            () -> ByteBuffer.allocateDirect(MAX_METADATA * Integer.BYTES).order(ByteOrder.nativeOrder()));
+    private static final ThreadLocal<ByteBuffer> COUNTS = ThreadLocal.withInitial(
+            () -> ByteBuffer.allocateDirect(MAX_METADATA * Integer.BYTES).order(ByteOrder.nativeOrder()));
+    private static final boolean RUST_GL_ENABLED = Boolean.parseBoolean(
+            System.getProperty("whatoptimizations.nativeRenderer.rustGl", "true"));
+    private static final String[] RUST_GL_FUNCTIONS = {
+            "glGetIntegerv", "glGetBooleanv", "glIsEnabled", "glUseProgram",
+            "glBindVertexArray", "glBindBuffer", "glDepthFunc", "glDepthMask",
+            "glBlendFuncSeparate", "glEnable", "glDisable", "glMultiDrawArrays"
+    };
+    private static volatile long[] rustGlProcedureCache;
 
     private static final Map<Long, Allocation> ALLOCATIONS =
             new LinkedHashMap<>(256, 0.75f, true);
@@ -114,8 +120,8 @@ final class NativeOpenGLRenderer {
                     floorToInt(camera.y),
                     floorToInt(camera.z));
 
-            IntBuffer firsts = FIRSTS.get();
-            IntBuffer counts = COUNTS.get();
+            ByteBuffer firsts = FIRSTS.get();
+            ByteBuffer counts = COUNTS.get();
             firsts.clear();
             counts.clear();
             int draws = 0;
@@ -130,16 +136,16 @@ final class NativeOpenGLRenderer {
                     if (allocation == null || allocation.vertexCount == 0) {
                         continue;
                     }
-                    firsts.put(allocation.offset / GPU_VERTEX_STRIDE);
-                    counts.put(allocation.vertexCount);
+                    firsts.putInt(allocation.offset / GPU_VERTEX_STRIDE);
+                    counts.putInt(allocation.vertexCount);
                     draws++;
                 }
             } else {
                 // Visibility ABI failure fails open to drawing available meshes.
                 for (Allocation allocation : new ArrayList<>(ALLOCATIONS.values())) {
                     if (allocation.vertexCount != 0) {
-                        firsts.put(allocation.offset / GPU_VERTEX_STRIDE);
-                        counts.put(allocation.vertexCount);
+                        firsts.putInt(allocation.offset / GPU_VERTEX_STRIDE);
+                        counts.putInt(allocation.vertexCount);
                         draws++;
                     }
                 }
@@ -152,11 +158,9 @@ final class NativeOpenGLRenderer {
             firsts.flip();
             counts.flip();
 
-            GL33C.glEnable(GL33C.GL_DEPTH_TEST);
-            GL33C.glDepthFunc(GL33C.GL_LEQUAL);
-            GL33C.glDepthMask(false);
-            GL33C.glDisable(GL33C.GL_BLEND);
-            GL33C.glDisable(GL33C.GL_CULL_FACE);
+            // Shader/buffer setup remains in the Fabric adapter. When enabled,
+            // Rust performs state save/restore and the actual multidraw through
+            // function pointers resolved via GLFW on this render thread.
             GL33C.glUseProgram(program);
             GL33C.glBindVertexArray(vao);
             GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
@@ -166,7 +170,26 @@ final class NativeOpenGLRenderer {
                 matrix.flip();
                 GL33C.glUniformMatrix4fv(mvpLocation, false, matrix);
             }
-            GL33C.glMultiDrawArrays(GL33C.GL_TRIANGLES, firsts, counts);
+
+            boolean rustDrawn = false;
+            if (RUST_GL_ENABLED) {
+                int status = Native.drawMultiDrawOpenGL(
+                        program, vao, vbo, firsts, counts, draws, rustGlProcedures());
+                if (status == 0) {
+                    rustDrawn = true;
+                } else if (status != -10) {
+                    LOGGER.debug("Rust OpenGL multidraw returned {}; using LWJGL fallback", status);
+                }
+            }
+            if (!rustDrawn) {
+                GL33C.glEnable(GL33C.GL_DEPTH_TEST);
+                GL33C.glDepthFunc(GL33C.GL_LEQUAL);
+                GL33C.glDepthMask(false);
+                GL33C.glDisable(GL33C.GL_BLEND);
+                GL33C.glDisable(GL33C.GL_CULL_FACE);
+                GL33C.glMultiDrawArrays(
+                        GL33C.GL_TRIANGLES, firsts.asIntBuffer(), counts.asIntBuffer());
+            }
         } catch (RuntimeException | LinkageError failure) {
             long now = System.nanoTime();
             if (now - lastErrorLog > 5_000_000_000L) {
@@ -176,6 +199,29 @@ final class NativeOpenGLRenderer {
         } finally {
             state.restore();
         }
+    }
+
+    private static long[] rustGlProcedures() {
+        long[] cached = rustGlProcedureCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (NativeOpenGLRenderer.class) {
+            cached = rustGlProcedureCache;
+            if (cached == null) {
+                long[] resolved = new long[RUST_GL_FUNCTIONS.length];
+                boolean allAvailable = true;
+                for (int i = 0; i < RUST_GL_FUNCTIONS.length; i++) {
+                    resolved[i] = GLFW.glfwGetProcAddress(RUST_GL_FUNCTIONS[i]);
+                    allAvailable &= resolved[i] != 0L;
+                }
+                if (allAvailable) {
+                    rustGlProcedureCache = resolved;
+                }
+                cached = resolved;
+            }
+        }
+        return cached;
     }
 
     private static Matrix4f makeMvp(Vec3 camera) {

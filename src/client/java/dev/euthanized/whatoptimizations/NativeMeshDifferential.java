@@ -3,7 +3,6 @@ package dev.euthanized.whatoptimizations;
 import com.mojang.blaze3d.vertex.MeshData;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Arrays;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
@@ -88,16 +87,7 @@ final class NativeMeshDifferential {
             if (axis != 1 && !isOneBlockWide(minY, maxY)) continue;
             if (axis != 2 && !isOneBlockWide(minZ, maxZ)) continue;
 
-            float crossX = (xs[1] - xs[0]) * (ys[2] - ys[0])
-                    - (ys[1] - ys[0]) * (xs[2] - xs[0]);
-            float crossY = (ys[1] - ys[0]) * (zs[2] - zs[0])
-                    - (zs[1] - zs[0]) * (ys[2] - ys[0]);
-            float crossZ = (zs[1] - zs[0]) * (xs[2] - xs[0])
-                    - (xs[1] - xs[0]) * (zs[2] - zs[0]);
-            float direction = axis == 0 ? crossZ : axis == 1 ? crossX : crossY;
-            // The cross-product component used above depends on the chosen
-            // coordinate permutation, not the plane normal. Compute the full
-            // face normal for robust sign selection instead.
+            // Determine the outward face direction from the first triangle's winding.
             float nx = (ys[1] - ys[0]) * (zs[2] - zs[0])
                     - (zs[1] - zs[0]) * (ys[2] - ys[0]);
             float ny = (zs[1] - zs[0]) * (xs[2] - xs[0])
@@ -200,16 +190,6 @@ final class NativeMeshDifferential {
                 maxY = Math.max(maxY, Byte.toUnsignedInt(bytes[offset + 1]));
                 maxZ = Math.max(maxZ, Byte.toUnsignedInt(bytes[offset + 2]));
             }
-
-            int xStart = minX, xEnd = maxX;
-            int yStart = minY, yEnd = maxY;
-            int zStart = minZ, zEnd = maxZ;
-            if (face == 0) xEnd = xStart + 1;
-            if (face == 1) xStart = xEnd - 1;
-            if (face == 2) yEnd = yStart + 1;
-            if (face == 3) yStart = yEnd - 1;
-            if (face == 4) zEnd = zStart + 1;
-            if (face == 5) zStart = zEnd - 1;
 
             if (face < 2) {
                 for (int y = minY; y < maxY; y++) {

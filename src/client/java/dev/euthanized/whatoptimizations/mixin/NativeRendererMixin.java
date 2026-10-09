@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Polls completed tickets and issues the optional GL pass at the end of world rendering. */
 @Mixin(targets = "net.minecraft.client.renderer.LevelRenderer", remap = false)
 public abstract class NativeRendererMixin {
-    @Inject(method = "renderLevel", at = @At("TAIL"))
+    @Inject(method = "render", at = @At("TAIL"))
     private void whatOptimizations$renderNativeSections(CallbackInfo ci) {
         NativeRendererControls.onRenderTail();
     }

@@ -24,6 +24,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Build through the committed Gradle wrapper
         run: ./gradlew build --stacktrace
+      - name: Upload Linux-only smoke-test JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-mod-jar-linux-smoke
+          path: build/libs/what-optimizations-0.1.0.jar
+          if-no-files-found: error
+          retention-days: 14
 
   native:
     name: Native - ${{ matrix.os }}

@@ -48,9 +48,9 @@ public final class NativeSectionMesher {
     // Section compilation is worker-threaded. Reuse bounded direct buffers per
     // worker to avoid a 1.2 MiB native allocation for every section compile.
     private static final ThreadLocal<ByteBuffer> INPUT_BUFFER = ThreadLocal.withInitial(
-            () -> ByteBuffer.allocateDirect(MAX_INPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
+            () -> ByteBuffer.allocateDirect(MAX_INPUT_BYTES).order(ByteOrder.nativeOrder()));
     private static final ThreadLocal<ByteBuffer> OUTPUT_BUFFER = ThreadLocal.withInitial(
-            () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.LITTLE_ENDIAN));
+            () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.nativeOrder()));
     private static final ThreadLocal<SnapshotWorkspace> SNAPSHOT_WORKSPACE =
             ThreadLocal.withInitial(SnapshotWorkspace::new);
 

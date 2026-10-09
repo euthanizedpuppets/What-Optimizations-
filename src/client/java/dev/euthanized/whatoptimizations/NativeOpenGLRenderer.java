@@ -1,6 +1,5 @@
 package dev.euthanized.whatoptimizations;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -180,11 +179,13 @@ final class NativeOpenGLRenderer {
     }
 
     private static Matrix4f makeMvp(Vec3 camera) {
-        // The Minecraft model-view matrix contains camera orientation; translate
-        // world-space native positions relative to the current camera explicitly.
-        Matrix4f view = new Matrix4f(RenderSystem.getModelViewMatrix())
+        // In 26.2 the projection is managed as a GPU buffer slice instead of a
+        // public RenderSystem Matrix4f getter. Camera supplies the active
+        // view-rotation-projection matrix; world-space vertices get camera-relative
+        // translation here (P * R * T(-camera)).
+        return Minecraft.getInstance().gameRenderer.mainCamera()
+                .getViewRotationProjectionMatrix(new Matrix4f())
                 .translate((float) -camera.x, (float) -camera.y, (float) -camera.z);
-        return new Matrix4f(RenderSystem.getProjectionMatrix()).mul(view);
     }
 
     private static void writeFrustumPlanes(Matrix4f m, ByteBuffer output) {

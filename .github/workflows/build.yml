@@ -23,7 +23,7 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Build through the committed Gradle wrapper
-        run: ./gradlew build --stacktrace
+        run: ./gradlew build nativeTest nativeFormatCheck --stacktrace
       - name: Upload Linux-only smoke-test JAR
         uses: actions/upload-artifact@v4
         with:

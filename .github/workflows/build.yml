@@ -74,10 +74,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: Set up Gradle 9.5.1
+      - name: Set up Gradle 9.7.0 (required by Loom 1.18.3)
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.5.1'
+          gradle-version: '9.7.0'
       - name: Build mod and bundle native libraries
         run: gradle build --stacktrace
       - name: Upload mod jar

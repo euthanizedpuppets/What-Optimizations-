@@ -97,11 +97,11 @@ final class NativeOpenGLRenderer {
             records.position(VISIBILITY_HEADER);
             for (NativeSectionMeshCache.SectionMetadata section : metadata) {
                 long key = section.sectionKey();
-                // Rust visibility nodes use world-space block origins and
-                // 16-block AABBs. SectionPos keys contain section coordinates.
-                records.putInt(unpackX(key) << 4);
-                records.putInt(unpackY(key) << 4);
-                records.putInt(unpackZ(key) << 4);
+                // NativeSectionMesher keys sections with BlockPos.asLong(sectionPos.origin()),
+                // so these are already world-space block coordinates, not section indices.
+                records.putInt(unpackX(key));
+                records.putInt(unpackY(key));
+                records.putInt(unpackZ(key));
                 records.put((byte) section.openFaces());
                 records.put((byte) 0);
                 records.putShort((short) 0);
@@ -405,14 +405,12 @@ final class NativeOpenGLRenderer {
         byte[] packed = mesh.bytes();
         ByteBuffer source = ByteBuffer.wrap(packed).order(ByteOrder.nativeOrder());
         ByteBuffer target = ByteBuffer.allocateDirect(packed.length).order(ByteOrder.nativeOrder());
-        // SectionPos.asLong stores SECTION coordinates, while vertex positions
-        // and the MVP below are in BLOCK/world coordinates. Convert the origin
-        // before adding the 0..16 local mesh coordinates; without this shift,
-        // the diagnostic geometry is drawn near the world origin and never
-        // lines up with the vanilla chunk it represents.
-        int originX = unpackX(mesh.sectionKey()) << 4;
-        int originY = unpackY(mesh.sectionKey()) << 4;
-        int originZ = unpackZ(mesh.sectionKey()) << 4;
+        // NativeSectionMesher uses BlockPos.asLong(sectionPos.origin()) for cache
+        // keys. Those coordinates are already block-space origins; shifting
+        // them would move the overlay sixteen times too far from the real section.
+        int originX = unpackX(mesh.sectionKey());
+        int originY = unpackY(mesh.sectionKey());
+        int originZ = unpackZ(mesh.sectionKey());
         for (int offset = 0; offset < packed.length; offset += Native.MESH_VERTEX_STRIDE) {
             float x = originX + Byte.toUnsignedInt(packed[offset]);
             float y = originY + Byte.toUnsignedInt(packed[offset + 1]);

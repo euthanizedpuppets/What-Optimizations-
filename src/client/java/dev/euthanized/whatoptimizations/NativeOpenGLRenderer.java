@@ -261,6 +261,15 @@ final class NativeOpenGLRenderer {
         if (initialized) {
             return;
         }
+        GLState originalState = GLState.capture();
+        try {
+            initializeResources();
+        } finally {
+            originalState.restore();
+        }
+    }
+
+    private static void initializeResources() {
         int vertexShader = compileShader(GL33C.GL_VERTEX_SHADER, """
                 #version 330 core
                 layout(location = 0) in vec3 Position;

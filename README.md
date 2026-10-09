@@ -1,69 +1,86 @@
 # What-Optimizations-
 
-A deliberately overengineered Minecraft Java 26.2 Fabric experiment: moving chunk-section CPU work into Rust through JNI.
+A deliberately overengineered Minecraft Java 26.2 Fabric experiment: move section-mesh CPU work into Rust through JNI, then experiment with Rust-owned visibility and OpenGL draws.
 
-## Current stage: Phase 1 — shadow mesher
+## Target and CLI
 
-The Phase 0 build scaffold passes GitHub Actions. Phase 1 now intercepts the verified 26.2 section compiler return path, snapshots each section plus a one-block border, and hands the snapshot to Rust.
+- Minecraft Java Edition **26.2**, Java **25**, Fabric Loader **0.19.5**.
+- Rust `cdylib`, JNI direct-buffer ABI, bounded Rayon workers.
+- The Gradle wrapper is committed; a global Gradle installation is not required.
 
-- Java 25, Minecraft 26.2, Mojang's unobfuscated names, Fabric Loader 0.19.5.
-- Rust cdylib with jni and a bounded Rayon worker pool.
-- Bulk direct-buffer ABI: one input/output pair per section, never one JNI call per block or quad.
-- An 18×18×18 snapshot containing state IDs, palette flags, and block/sky light values.
-- Rust face occlusion, greedy coplanar rectangle merging, initial corner AO/light sampling, and a 16-byte vertex stride.
-- A 16 MiB access-ordered CPU cache for native output.
-- Reused per-worker snapshot arrays and palette storage to cut per-section allocation churn.
-- Rust reuses a fixed greedy mask on the stack, starts output vectors with a smaller reserve, and samples a face's 3×3 lighting/AO neighborhood once.
-- The native helper pool is capped at two threads to leave more CPU headroom for Minecraft workers and integrated-server ticking.
-- Sections without meshable opaque interior cubes skip light sampling, JNI, and Rust meshing; their cached shadow output is invalidated.
-- Native helper workers are prewarmed during mod initialization so Rayon thread creation is not charged to the first sampled section.
-- GitHub Actions compiles native code and packages the platform libraries inside the Fabric mod JAR.
-- Shadow work is sampled by default: one in every eight section-compiler callbacks. Logs include averaged snapshot, JNI/Rust, and copy/cache timings so the duplicate work can be quantified.
+Build the Fabric mod and platform-native library:
 
-The source-audit workflow runs Loom's genSources on the exact Minecraft 26.2 dependency. It verified this actual method signature:
+```sh
+./gradlew build
+```
 
-    SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack)
+Run Rust unit/regression tests:
 
-The mixin injects at RETURN and leaves the original vanilla mesh untouched.
+```sh
+./gradlew nativeTest
+```
 
-## Important rendering limitations
+Check Rust formatting:
 
-This is intentionally a shadow implementation, not yet a visible replacement renderer. Vanilla still renders all geometry. Rust's output is cached for inspection and later upload/draw work.
+```sh
+./gradlew nativeFormatCheck
+```
 
-Only full opaque model cubes without fluids or block entities are admitted to the native cube path. Plants, stairs/slabs and other non-full shapes, transparent blocks, fluids, special models, and block entities remain exclusively on vanilla's renderer. This avoids silently pretending a generic cube mesh can replace every Minecraft model.
+The wrapper downloads Gradle 9.7.0 once. Java 25 and Rust/Cargo are still required for a local native build. GitHub Actions builds and packages Linux, macOS, and Windows native libraries into the JAR.
 
-The initial AO and light samples are approximate and require visual/numeric comparison with vanilla before the native geometry may be used for actual rendering. Block state IDs currently stand in as material keys; they do not yet encode block atlas UVs, biome tint, shader/render-layer identity, or special vertex attributes.
+## Current implementation
 
-## First in-game smoke test
+### Native meshing and worker jobs
 
-Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris or other renderer replacements for the first run. Back up any test world before launching.
+The verified `SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack)` hook runs after vanilla compilation. Java snapshots a 18×18×18 volume (section plus one-block border), builds a compact palette of native-endian state IDs/flags and cell light values, and sends it through direct `ByteBuffer`s.
 
-1. Download `minecraft-mod-jar` from the latest **successful** GitHub Actions Build run and put the JAR in the instance's `mods` folder.
-2. Launch once, create or open a test world, and travel through a few chunk sections. Vanilla is still rendering the world; the Rust mesh is diagnostic shadow data only.
-3. In `logs/latest.log`, look for `Rust JNI smoke test completed successfully.` and a line beginning `Rust shadow mesher:`. It reports compiler callbacks, sampled/skipped sections, packed vertices, failures, cache size, and average snapshot/Rust/copy-cache stage times. The default samples one in eight callbacks to reduce the shadow-mode CPU tax.
-4. Investigate any `Native shadow meshing failed`, `Rust returned native error`, or mixin/bootstrap errors before further work. To disable shadow work completely, add `-Dwhatoptimizations.nativeMesher=false` to the launcher's JVM arguments. For a heavier every-section diagnostic run, use `-Dwhatoptimizations.nativeMesher.sampleRate=1`; use `-Dwhatoptimizations.nativeMesher.sampleRate=8` for the default sampling interval explicitly. Values are clamped to 1–64. Sampling only reduces diagnostic overhead: it does not replace vanilla rendering or by itself speed up chunk compilation.
+Rust performs opaque-full-cube face culling, greedy rectangle merging, initial AO/light packing, and emits packed 16-byte vertices. The input snapshot is copied into Rust-owned memory before JNI returns. A bounded Rayon pool handles the work without touching the JVM. Java polls job tickets on the render thread. Tickets carry a section key and generation, stale results are discarded, result memory has a queue-wide budget, and Java explicitly calls `release(ticket)` for every completed/cancelled job.
 
-The native path samples one in eight section callbacks by default. Snapshot workspace reuse, lower Rust scratch allocation, shared face-neighborhood sampling, a two-thread native pool, and an empty-section fast path reduce the cost of shadow diagnostics.
+The native registry is capped at 96 tickets, queued mesh bytes are capped at 32 MiB, the Java pending list is capped at 64, and the CPU cache is capped at 16 MiB. The Rust pool is limited to one or two workers to leave CPU headroom for Minecraft's own work and integrated-server ticking. Sampling defaults to one out of every eight section compiler callbacks; the F9 debug mode forces every section through the diagnostic path.
 
-This remains **integration validation, not a claim of faster rendering**: vanilla still builds and renders its mesh, and server-tick performance must be profiled independently.
+### Visibility and draw experiment
 
-## Get the build
+Rust includes an AABB frustum test plus a sparse six-neighbor open-face graph walk. Metadata is derived from sampled section borders. If the camera's section is absent from this partial graph, visibility fails open to frustum-only results so the diagnostic path does not hide unrelated sections.
 
-Open the repository's Actions tab, choose the latest successful Build run, and download the minecraft-mod-jar artifact. Extract the artifact ZIP and put its JAR in the Minecraft 26.2 Fabric instance's mods directory. The JAR contains the native binaries produced by CI.
+The opt-in draw pass uses a 64 MiB OpenGL 3.3 arena, an explicit free-range allocator, cached per-section uploads, and `glMultiDrawArrays`. When `whatoptimizations.nativeRenderer.rustGl=true`, Rust receives OpenGL function pointers resolved on the current GLFW context and performs the state-save/configure/draw/restore portion of the call itself. Java still creates the diagnostic shader and GPU arena, does vertex conversion/uploads, and falls back to LWJGL drawing if native GL dispatch fails. The path does not use Rust GL calls from worker threads.
 
-Local build prerequisites are Java 25, Gradle 9.7.0 for the resolved Loom 1.18.3 plugin, and Rust/Cargo. GitHub Actions performs builds for you.
+## Runtime controls
 
-## Compatibility
+- **F7** — stop/restart Rust meshing. Turning it off releases pending tickets and clears the native mesh/visibility cache. Vanilla rendering is unchanged.
+- **F8** — toggle the experimental native GL diagnostic draw pass. It remains **off by default**. Rebuild chunks (F3+A) after enabling so uncached sections are sampled.
+- **F9** — toggle deep diagnostics. It enables full sampling and compares synchronous Rust output against async Rust output, then compares normalized native cube faces with the actual vanilla `SOLID` `MeshData`.
 
-The OpenGL backend-selection mixins are deliberately not registered during Phase 1: shadow meshing issues no graphics calls and does not need to override the game's backend or edit `options.txt`. Revisit backend selection alongside the Phase 3 render-thread upload/draw path. The active section-compiler hook may conflict with Sodium or other mods that replace vanilla chunk compilation, so use a clean Fabric profile for the first test.
+JVM properties:
 
-## Long-term renderer rewrite
+- `-Dwhatoptimizations.nativeMesher=false` starts with Rust meshing disabled.
+- `-Dwhatoptimizations.nativeMesher.sampleRate=1` samples every compile callback (values clamp to 1–64; default is 8).
+- `-Dwhatoptimizations.nativeMesher.debug=true` starts F9 diagnostics enabled.
+- `-Dwhatoptimizations.nativeRenderer=true` starts the experimental GL pass enabled.
+- `-Dwhatoptimizations.nativeRenderer.rustGl=false` forces the LWJGL `glMultiDrawArrays` fallback instead of calling GL draw functions from Rust.
 
-The target is a Rust-owned chunk-rendering pipeline, not a permanent shadow mesher. Rust will own hot-path mesh building, visibility, batching, and bounded mesh/GPU allocator metadata; Java remains the thin Minecraft adapter for live block/model/resource access and render-thread lifecycle. We will not replace visible vanilla meshes until native output supports the required model geometry, atlas UVs, materials/render layers, tint, light/AO, fluids, and special render cases. The staged ownership model, memory budgets, and rollout gates are documented in [Rust Renderer Architecture](docs/RUST_RENDERER_ARCHITECTURE.md).
+The F3 panel shows section callbacks, selected/completed/pending jobs, stale results, failures, average vanilla compile and native-stage times, and visible/tracked section counts. The icon is packaged at `src/main/resources/What?.png` and referenced by `fabric.mod.json`.
 
-## Next stages
+## What the current renderer is — and is not
 
-- Phase 1: validate snapshot and packed mesh output in game against known block arrangements; then add correct render-layer/material/UV/tint handling and upload.
-- Phase 2: Rust visibility and cave graph, still validated against vanilla.
-- Phase 3: bounded GPU allocator and custom OpenGL draw path.
-- Phase 4: optional Rust-side GL calls on the render thread only.
+**Vanilla still builds and renders the real Minecraft meshes.** The optional native draw pass is a colored opaque-cube diagnostic overlay; it is not a full replacement for Minecraft's renderer and is not yet a performance claim. The current native eligibility rule is intentionally narrow: full opaque cubes with `MODEL` render shape, no fluid, and no block entity. State hashes are used for diagnostic colors, not the block atlas.
+
+F9's normalized geometry check compares unit-aligned opaque-cube faces in vanilla's `SOLID` mesh to the native surface set and logs the first mismatching local block/face/state as well as the mismatch count. It does **not** validate UVs, biome tints, exact lighting/AO values, transparency, cutout/translucency layers, fluids, block entities, or other non-cube models. The mesher's AO/light data is still an approximation.
+
+Those limits mean this branch is a real pipeline prototype and instrumentation pass, not the complete renderer rewrite. Replacing the vanilla renderer visibly still requires a model/material/atlas/tint/render-layer representation, correct lighting and transparency, special-renderer support, complete invalidation/lifecycle integration, and in-game visual testing. Until then, do not disable vanilla rendering.
+
+## Test workflow
+
+Use a disposable Minecraft 26.2 Fabric instance with Java 25 and no Sodium/Iris or other renderer replacements. Back up test worlds before experimenting.
+
+1. Download the `minecraft-mod-jar` artifact from the latest successful **Build** workflow run and put the JAR in the instance's `mods` folder.
+2. Launch and travel through several sections. By default vanilla renders the world; Rust keeps shadow geometry for inspection.
+3. Watch `logs/latest.log` for `Rust JNI smoke test completed successfully.`, `Rust async mesher:` lines, or native failure messages.
+4. Press **F8** to view the diagnostic geometry overlay, **F9** to enable full sampling and vanilla-face comparisons, and **F7** to turn native meshing off completely.
+
+The native GL pass has been built and tested by CI, but it still needs visual testing in the target game/runtime and graphics driver. OpenGL state preservation is deliberately conservative; if the pass causes trouble, leave it disabled or start with `-Dwhatoptimizations.nativeRenderer.rustGl=false`.
+
+## Long-term direction
+
+The architecture goal is a Rust-owned renderer for mesh building, visibility, batching, bounded memory management, and render-thread draw submission. Java remains a thin adapter for Minecraft-owned block/model/resource data and render lifecycle. See [Rust Renderer Architecture](docs/RUST_RENDERER_ARCHITECTURE.md) and [implementation phases](docs/PHASES.md).
+
+The current phase provides the CPU job pipeline, native visibility kernel, bounded caches, diagnostic GL arena, runtime fallback keys, and initial debug comparison. It does not yet switch off vanilla's actual draw calls.

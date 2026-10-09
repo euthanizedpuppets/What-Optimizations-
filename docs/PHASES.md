@@ -1,58 +1,55 @@
 # Implementation phases
 
-## Phase 0 — scaffold
+## Phase 0 — scaffold and native loading
 
-- [x] Gradle/Fabric scaffold for Minecraft 26.2 and Java 25.
-- [x] Rust cdylib using jni and rayon.
-- [x] Platform library extraction and System.load.
-- [x] Prewarm the bounded Rayon worker pool during mod initialization instead of the first section callback.
-- [x] Native.hello() smoke test.
-- [x] Draft OpenGL preference mixins adapted from the concrete BackToGL 26.2 implementation (kept out of the active Phase 1 mixin list until GPU drawing exists).
-- [x] Cross-platform GitHub Actions native build and mod JAR packaging.
-- [x] CI build passed.
-- [ ] In-game startup and actual backend preference still need verification.
+- [x] Fabric / Gradle scaffold for Minecraft 26.2 and Java 25.
+- [x] Rust `cdylib`, JNI binding, platform library extraction/loading and smoke test.
+- [x] Add the `What?.png` icon to mod resources and `fabric.mod.json`.
+- [x] Gradle 9.7.0 wrapper plus `nativeTest` and `nativeFormatCheck` tasks for CLI use.
+- [x] Force-OpenGL preference mixins are active in this experiment branch, as required by the GL 3.3 path.
+- [ ] Verify OpenGL backend selection and startup behavior in an actual Minecraft client.
 
-## Phase 1 — conservative Rust section meshing (shadow mode)
+## Phase 1 — native section snapshot and asynchronous meshing
 
-- [x] Deferred the OpenGL preference mixins during shadow mode; JNI meshing should not alter graphics-backend selection or rewrite `options.txt`.
+- [x] Use exact Minecraft 26.2 sources to verify `SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack)`.
+- [x] Run the Rust shadow mesher at the compile RETURN hook while preserving the vanilla `Results` by default.
+- [x] Java packs a 18×18×18 section plus border snapshot in native-endian direct buffers with compact palette IDs, mesh flags, and block/sky light.
+- [x] Rust validates the ABI, culls opaque neighbors, greedy-merges eligible full-cube surfaces, and emits packed 16-byte vertices.
+- [x] Bounded Rust worker pool; Rust jobs hold Rust-owned snapshots and never callback into the JVM.
+- [x] Ticket handle, section key + generation, render-thread completion polling, stale-result rejection and explicit release.
+- [x] Limits: 96 native jobs, 32 MiB live native mesh results, 64 Java pending tickets and 16 MiB CPU mesh cache.
+- [x] Reuse snapshot workspace and greedy masks; prewarm Rayon; cap native pool to at most two workers.
+- [x] Skip light sampling/JNI/Rust when no eligible interior opaque cube exists.
+- [x] Rust regression tests for empty/isolated/adjacent/solid-box/diagonal shapes, face masks, padded neighbors, winding, malformed buffers and output limits.
+- [x] Sync-versus-async Rust byte comparison and normalized vanilla `SOLID` geometry comparison for integer-aligned opaque-cube faces in F9 mode.
+- [ ] Validate F9's vanilla geometry diff with in-game fixtures; it is intentionally not a comparison of UVs, materials, exact AO/light, or unsupported layers.
+- [ ] Separate profile of integrated-server ticking remains necessary; renderer work does not optimize world simulation.
 
-- [x] Generated exact Minecraft 26.2 sources with Loom genSources in CI.
-- [x] Verified real target: SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack).
-- [x] Injected at compile RETURN, preserving the completed vanilla result.
-- [x] Java creates an 18×18×18 direct-buffer snapshot with a unique state palette, raw block-state registry IDs, face flags, and block/sky light values.
-- [x] Native ABI validates header, dimensions, palette IDs, byte offsets and output capacity.
-- [x] JNI is section-granular and Rust panics are contained before returning to Java.
-- [x] Rayon handles six face directions on its worker pool.
-- [x] Rust culls faces adjacent to occluding states and greedily merges uniform coplanar faces.
-- [x] Emits 16-byte triangle-list vertices compatible with OpenGL 3.3 topology.
-- [x] Initial approximate AO/light corner sampling.
-- [x] Bounded 16 MiB native output cache.
-- [x] Default 1-in-8 shadow sampling and stage-time diagnostics to limit duplicated CPU work and measure snapshot, native meshing, and cache-copy costs.
-- [x] Reuse snapshot arrays, palette lookup capacity, and palette scalar storage per section worker.
-- [x] Reduce per-direction native output reservation and keep the fixed greedy mask on the stack.
-- [x] Compute corner AO/light from one shared 3×3 neighborhood for each exposed face.
-- [x] Cap Rayon to two helper threads to reduce competition with Minecraft's workers.
-- [x] Skip light sampling/JNI/Rust for sections containing no eligible interior opaque cubes; invalidate any stale shadow-cache entry.
-- [x] Unit tests: empty section, isolated cube, adjacent-cube greedy merge on all axes, solid 2×2×2 greedy merge, diagonal non-merge, padded-neighbor culling, six-face/local-coordinate validation, outward triangle winding, malformed header/total size, invalid palette index, insufficient output buffer.
-- [ ] CI compile/tests must pass for the latest Phase 1 commit after worker-pool prewarming.
-- [x] Run Minecraft 26.2 successfully: thousands of sampled sections, zero native failures, and cache use below the 16 MiB bound.
-- [ ] Use per-stage timings to target remaining snapshot/state/light sampling and native meshing overhead.
-- [ ] Profile integrated-server ticking separately; the current native section hook does not optimize game simulation ticks.
-- [ ] Compare AO/light values against vanilla.
-- [ ] Upload/draw, correct atlas UVs, biome tint, material/render-layer identity, non-cube model handling and block entity rendering are not implemented.
+## Phase 2 — visibility kernel (initial prototype implemented)
 
-Safety boundary: native output is shadow data only. Vanilla is still the visible renderer. Do not use the native cache as a full section replacement mesh. Only full opaque model cubes without fluid and block entity are classified as meshable. Plants, stairs/slabs, transparent geometry, fluids, and custom models stay on vanilla.
+- [x] Rust section-AABB frustum test exposed by JNI.
+- [x] Six-neighbor open-face graph walk returns a compact visible-section index list.
+- [x] Feed cache section metadata into the visibility call in the GL diagnostic pass.
+- [ ] This is a sparse, coarse graph over cached sections, not a mature Sodium-equivalent occlusion graph. Test caves, doors, section boundaries and dynamic changes before relying on it.
 
-## Phase 2 — visibility (not implemented)
+## Phase 3 — GL upload and draw prototype (initial prototype implemented)
 
-Compute per-frame frustum visibility and investigate a section-connectivity/cave-culling graph. Return a compact visible-section list through a bulk JNI call. Validate in open terrain, caves, and water before changing rendering.
+- [x] 64 MiB persistent OpenGL 3.3 vertex arena and a bounded first-fit/free-range allocator.
+- [x] Render-thread uploads with `glBufferSubData` and `glMultiDrawArrays` over the native visible-section list.
+- [x] State preservation around initialization, synchronization and drawing.
+- [x] F8 draw toggle / vanilla-visible fallback, F7 mesher kill switch and F3 telemetry.
+- [ ] The output is currently a diagnostic pseudo-color opaque-cube overlay, not Minecraft's atlas/material renderer. Vanilla's original meshes and draws are still active.
+- [ ] Build a model/material/atlas/render-layer ABI before replacing vanilla geometry. Full cubes alone cannot represent stairs, slabs, custom models, tint, fluids, transparency or block entities.
 
-The long-term goal is a Rust-owned chunk-rendering pipeline with Java as a thin Minecraft adapter. See [Rust Renderer Architecture](RUST_RENDERER_ARCHITECTURE.md) for ownership boundaries, CPU/memory budgets, model/material parity requirements, and rollout gates.
+## Phase 4 — optional Rust-side GL calls (initial prototype implemented)
 
-## Phase 3 — custom draw path (not implemented)
+- [x] Java resolves baseline GL function pointers through `glfwGetProcAddress` while the render context is current.
+- [x] Rust executes the state-save/configure/`glMultiDrawArrays`/restore segment synchronously on the render thread; worker threads never call GL.
+- [x] `-Dwhatoptimizations.nativeRenderer.rustGl=false` falls back to LWJGL dispatch.
+- [ ] Validate state restoration and drawing across supported GL drivers and the exact 26.2 runtime. Do not treat CI compilation as an in-game graphics test.
 
-Implement GPU upload on the render thread, a bounded suballocator, and a target-version-verified draw path behind an opt-in switch. Preserve Minecraft graphics state and resource lifetimes; do not assume OpenGL until the 26.2 runtime backend is verified. The current packed buffer is triangle-list data; OpenGL core does not support GL_QUADS.
+## Remaining renderer-replacement work
 
-## Phase 4 — optional Rust GL calls (stretch, not implemented)
+To switch this from a diagnostic pipeline to an actual vanilla renderer replacement, add full baked-model geometry, texture atlas UVs, layer/material identity, tint, exact-enough light/AO and emissive handling, transparent and cutout ordering, fluids and special-renderer support. Keep per-section fallback until a whole section is known to be representable. Integrate resource-generation and upload retirement properly; only then bypass vanilla compile/draw work for supported content.
 
-Only after Java-owned upload and draw work. Resolve GL functions on the render thread, restore all mutated state and fail closed when thread/context checks are wrong. Never make GL calls from Rayon workers.
+The target is intentionally ambitious, but the current code must be described as a working native pipeline prototype—not a complete drop-in renderer replacement or an established FPS/CPU improvement. See [Rust Renderer Architecture](RUST_RENDERER_ARCHITECTURE.md).

@@ -158,26 +158,30 @@ final class NativeOpenGLRenderer {
             firsts.flip();
             counts.flip();
 
-            // Shader/buffer setup remains in the Fabric adapter. When enabled,
-            // Rust performs state save/restore and the actual multidraw through
-            // function pointers resolved via GLFW on this render thread.
-            GL33C.glUseProgram(program);
-            GL33C.glBindVertexArray(vao);
-            GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                FloatBuffer matrix = stack.mallocFloat(16);
-                mvp.get(matrix);
-                matrix.flip();
-                GL33C.glUniformMatrix4fv(mvpLocation, false, matrix);
+            // Uniform setup must not leak a bound program into Rust. At native
+            // draw time Minecraft's original GL state should still be current.
+            GLState uniformState = GLState.capture();
+            try {
+                GL33C.glUseProgram(program);
+                try (MemoryStack stack = MemoryStack.stackPush()) {
+                    FloatBuffer matrix = stack.mallocFloat(16);
+                    mvp.get(matrix);
+                    matrix.flip();
+                    GL33C.glUniformMatrix4fv(mvpLocation, false, matrix);
+                }
+            } finally {
+                uniformState.restore();
             }
 
+            // Rust saves the Minecraft GL state itself, configures the pass,
+            // issues glMultiDrawArrays, then restores all changed state.
             boolean rustDrawn = false;
             if (RUST_GL_ENABLED) {
                 int status = Native.drawMultiDrawOpenGL(
                         program, vao, vbo, firsts, counts, draws, rustGlProcedures());
                 if (status == 0) {
                     rustDrawn = true;
-                } else if (status != -10) {
+                } else {
                     LOGGER.debug("Rust OpenGL multidraw returned {}; using LWJGL fallback", status);
                 }
             }
@@ -187,6 +191,9 @@ final class NativeOpenGLRenderer {
                 GL33C.glDepthMask(false);
                 GL33C.glDisable(GL33C.GL_BLEND);
                 GL33C.glDisable(GL33C.GL_CULL_FACE);
+                GL33C.glUseProgram(program);
+                GL33C.glBindVertexArray(vao);
+                GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
                 GL33C.glMultiDrawArrays(
                         GL33C.GL_TRIANGLES, firsts.asIntBuffer(), counts.asIntBuffer());
             }
@@ -317,7 +324,18 @@ final class NativeOpenGLRenderer {
 
     private static void synchronizeMeshes(List<NativeSectionMeshCache.MeshSnapshot> meshes) {
         Set<Long> live = new HashSet<>(meshes.size());
-        GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
+        int previousArrayBuffer = GL33C.glGetInteger(GL33C.GL_ARRAY_BUFFER_BINDING);
+        try {
+            GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, vbo);
+            synchronizeMeshesBound(meshes, live);
+        } finally {
+            GL33C.glBindBuffer(GL33C.GL_ARRAY_BUFFER, previousArrayBuffer);
+        }
+    }
+
+    private static void synchronizeMeshesBound(
+            List<NativeSectionMeshCache.MeshSnapshot> meshes,
+            Set<Long> live) {
         for (NativeSectionMeshCache.MeshSnapshot mesh : meshes) {
             live.add(mesh.sectionKey());
             int vertexCount = mesh.bytes().length / Native.MESH_VERTEX_STRIDE;

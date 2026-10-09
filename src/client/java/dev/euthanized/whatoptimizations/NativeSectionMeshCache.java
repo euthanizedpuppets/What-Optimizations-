@@ -104,6 +104,12 @@ final class NativeSectionMeshCache {
         return METADATA.size();
     }
 
+    static synchronized void clear() {
+        MESHES.clear();
+        METADATA.clear();
+        cachedBytes = 0;
+    }
+
     record SectionMetadata(long sectionKey, int openFaces, long generation) {
     }
 

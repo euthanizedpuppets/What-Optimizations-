@@ -16,6 +16,7 @@ The Phase 0 build scaffold passes GitHub Actions. Phase 1 now intercepts the ver
 - Rust reuses a fixed greedy mask on the stack, starts output vectors with a smaller reserve, and samples a face's 3×3 lighting/AO neighborhood once.
 - The native helper pool is capped at two threads to leave more CPU headroom for Minecraft workers and integrated-server ticking.
 - Sections without meshable opaque interior cubes skip light sampling, JNI, and Rust meshing; their cached shadow output is invalidated.
+- Native helper workers are prewarmed during mod initialization so Rayon thread creation is not charged to the first sampled section.
 - GitHub Actions compiles native code and packages the platform libraries inside the Fabric mod JAR.
 - Shadow work is sampled by default: one in every eight section-compiler callbacks. Logs include averaged snapshot, JNI/Rust, and copy/cache timings so the duplicate work can be quantified.
 
@@ -55,6 +56,10 @@ Local build prerequisites are Java 25, Gradle 9.7.0 for the resolved Loom 1.18.3
 ## Compatibility
 
 The OpenGL backend-selection mixins are deliberately not registered during Phase 1: shadow meshing issues no graphics calls and does not need to override the game's backend or edit `options.txt`. Revisit backend selection alongside the Phase 3 render-thread upload/draw path. The active section-compiler hook may conflict with Sodium or other mods that replace vanilla chunk compilation, so use a clean Fabric profile for the first test.
+
+## Long-term renderer rewrite
+
+The target is a Rust-owned chunk-rendering pipeline, not a permanent shadow mesher. Rust will own hot-path mesh building, visibility, batching, and bounded mesh/GPU allocator metadata; Java remains the thin Minecraft adapter for live block/model/resource access and render-thread lifecycle. We will not replace visible vanilla meshes until native output supports the required model geometry, atlas UVs, materials/render layers, tint, light/AO, fluids, and special render cases. The staged ownership model, memory budgets, and rollout gates are documented in [Rust Renderer Architecture](docs/RUST_RENDERER_ARCHITECTURE.md).
 
 ## Next stages
 

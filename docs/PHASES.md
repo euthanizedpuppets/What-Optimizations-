@@ -37,6 +37,7 @@
 - [x] 64 MiB persistent OpenGL 3.3 vertex arena and a bounded first-fit/free-range allocator.
 - [x] Render-thread uploads with `glBufferSubData` and `glMultiDrawArrays` over the native visible-section list.
 - [x] State preservation around initialization, synchronization and drawing.
+- [x] Detect GL 4.4 / `ARB_buffer_storage`; immutable arena allocation is opt-in and falls back to the GL 3.3 mutable path.
 - [x] F8 draw toggle / vanilla-visible fallback, F7 mesher kill switch and F3 telemetry.
 - [ ] The output is currently a diagnostic pseudo-color opaque-cube overlay, not Minecraft's atlas/material renderer. Vanilla's original meshes and draws are still active.
 - [ ] Build a model/material/atlas/render-layer ABI before replacing vanilla geometry. Full cubes alone cannot represent stairs, slabs, custom models, tint, fluids, transparency or block entities.

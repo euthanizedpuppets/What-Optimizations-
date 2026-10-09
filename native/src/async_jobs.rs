@@ -65,13 +65,18 @@ fn input_length(bytes: &[u8]) -> Result<usize, jint> {
 fn reserve_result_bytes(bytes: usize) -> bool {
     QUEUED_RESULT_BYTES
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-            current.checked_add(bytes).filter(|next| *next <= MAX_RESULT_BYTES)
+            current
+                .checked_add(bytes)
+                .filter(|next| *next <= MAX_RESULT_BYTES)
         })
         .is_ok()
 }
 
 fn finish_job(cell: &JobCell, result: Result<(usize, Vec<u8>), jint>) {
-    let mut state = cell.state.lock().unwrap_or_else(|poison| poison.into_inner());
+    let mut state = cell
+        .state
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     if cell.cancelled.load(Ordering::Acquire) || matches!(&*state, JobState::Cancelled) {
         return;
     }
@@ -85,10 +90,14 @@ fn finish_job(cell: &JobCell, result: Result<(usize, Vec<u8>), jint>) {
 }
 
 fn run_owned_snapshot(snapshot: Vec<u8>) -> Result<(usize, Vec<u8>), jint> {
-    let output_capacity = MAX_VERTICES.checked_mul(VERTEX_STRIDE).ok_or(ERR_OUTPUT_LIMIT)?;
+    let output_capacity = MAX_VERTICES
+        .checked_mul(VERTEX_STRIDE)
+        .ok_or(ERR_OUTPUT_LIMIT)?;
     let mut scratch = vec![0u8; output_capacity];
     let vertex_count = mesh_section(&snapshot, &mut scratch)?;
-    let used = vertex_count.checked_mul(VERTEX_STRIDE).ok_or(ERR_OUTPUT_LIMIT)?;
+    let used = vertex_count
+        .checked_mul(VERTEX_STRIDE)
+        .ok_or(ERR_OUTPUT_LIMIT)?;
     scratch.truncate(used);
     scratch.shrink_to_fit();
     Ok((vertex_count, scratch))
@@ -220,8 +229,7 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_release0(
                 Ok(guard) => guard,
                 Err(poison) => poison.into_inner(),
             };
-            registry.remove(&(ticket as u64)
-)
+            registry.remove(&(ticket as u64))
         };
         let Some(cell) = cell else {
             return ERR_UNKNOWN_HANDLE;
@@ -258,12 +266,11 @@ fn is_in_frustum(origin: [i32; 3], planes: &[[f32; 4]; 6]) -> bool {
     true
 }
 
-fn visible_indices(
-    nodes: &[SectionNode],
-    planes: &[[f32; 4]; 6],
-    camera: [i32; 3],
-) -> Vec<usize> {
-    let frustum: Vec<bool> = nodes.iter().map(|node| is_in_frustum(node.origin, planes)).collect();
+fn visible_indices(nodes: &[SectionNode], planes: &[[f32; 4]; 6], camera: [i32; 3]) -> Vec<usize> {
+    let frustum: Vec<bool> = nodes
+        .iter()
+        .map(|node| is_in_frustum(node.origin, planes))
+        .collect();
     let by_origin: HashMap<[i32; 3], usize> = nodes
         .iter()
         .enumerate()
@@ -275,7 +282,11 @@ fn visible_indices(
         camera[2].div_euclid(16) * 16,
     ];
     let Some(&start) = by_origin.get(&camera_section) else {
-        return frustum.iter().enumerate().filter_map(|(i, yes)| yes.then_some(i)).collect();
+        return frustum
+            .iter()
+            .enumerate()
+            .filter_map(|(i, yes)| yes.then_some(i))
+            .collect();
     };
 
     let steps: [([i32; 3], u8, u8); 6] = [
@@ -297,14 +308,20 @@ fn visible_indices(
             }
             let p = nodes[index].origin;
             let neighbor_origin = [p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]];
-            let Some(&next) = by_origin.get(&neighbor_origin) else { continue; };
+            let Some(&next) = by_origin.get(&neighbor_origin) else {
+                continue;
+            };
             if !reachable[next] && nodes[next].open_faces & opposite != 0 {
                 reachable[next] = true;
                 queue.push_back(next);
             }
         }
     }
-    nodes.iter().enumerate().filter_map(|(i, _)| (reachable[i] && frustum[i]).then_some(i)).collect()
+    nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, _)| (reachable[i] && frustum[i]).then_some(i))
+        .collect()
 }
 
 /// Input: u32 count + 16-byte records (i32 origin xyz, u8 open-face mask,
@@ -356,8 +373,12 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_visibleSecti
             Some(value) => value,
             None => return ERR_VISIBILITY_ABI,
         };
-        if VISIBILITY_HEADER_BYTES.checked_add(records_bytes).map_or(true, |required| required > sections_len)
-            || count.checked_mul(4).map_or(true, |bytes| bytes > output_len)
+        if VISIBILITY_HEADER_BYTES
+            .checked_add(records_bytes)
+            .map_or(true, |required| required > sections_len)
+            || count
+                .checked_mul(4)
+                .map_or(true, |bytes| bytes > output_len)
         {
             return ERR_VISIBILITY_ABI;
         }
@@ -366,7 +387,9 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_visibleSecti
         for (index, plane) in plane_data.iter_mut().enumerate() {
             for (component, value) in plane.iter_mut().enumerate() {
                 let offset = index * 16 + component * 4;
-                let Some(raw) = plane_bytes.get(offset..offset + 4) else { return ERR_VISIBILITY_ABI; };
+                let Some(raw) = plane_bytes.get(offset..offset + 4) else {
+                    return ERR_VISIBILITY_ABI;
+                };
                 *value = f32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]);
             }
         }
@@ -374,16 +397,27 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_visibleSecti
         let mut nodes = Vec::with_capacity(count);
         for index in 0..count {
             let offset = VISIBILITY_HEADER_BYTES + index * VISIBILITY_RECORD_BYTES;
-            let Some(x) = read_u32(section_bytes, offset) else { return ERR_VISIBILITY_ABI; };
-            let Some(y) = read_u32(section_bytes, offset + 4) else { return ERR_VISIBILITY_ABI; };
-            let Some(z) = read_u32(section_bytes, offset + 8) else { return ERR_VISIBILITY_ABI; };
-            nodes.push(SectionNode { origin: [x as i32, y as i32, z as i32], open_faces: section_bytes[offset + 12] });
+            let Some(x) = read_u32(section_bytes, offset) else {
+                return ERR_VISIBILITY_ABI;
+            };
+            let Some(y) = read_u32(section_bytes, offset + 4) else {
+                return ERR_VISIBILITY_ABI;
+            };
+            let Some(z) = read_u32(section_bytes, offset + 8) else {
+                return ERR_VISIBILITY_ABI;
+            };
+            nodes.push(SectionNode {
+                origin: [x as i32, y as i32, z as i32],
+                open_faces: section_bytes[offset + 12],
+            });
         }
 
         let visible = visible_indices(&nodes, &plane_data, [camera_x, camera_y, camera_z]);
         for (index, visible_index) in visible.iter().enumerate() {
             let bytes = (*visible_index as u32).to_ne_bytes();
-            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), output_ptr.add(index * 4), 4); }
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), output_ptr.add(index * 4), 4);
+            }
         }
         visible.len() as jint
     }))
@@ -401,13 +435,22 @@ mod async_visibility_tests {
     #[test]
     fn frustum_culling_rejects_outside_section() {
         let planes = [
-            [1.0, 0.0, 0.0, 0.0], [-1.0, 0.0, 0.0, 31.0],
-            [0.0, 1.0, 0.0, 100.0], [0.0, -1.0, 0.0, 100.0],
-            [0.0, 0.0, 1.0, 100.0], [0.0, 0.0, -1.0, 100.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0, 31.0],
+            [0.0, 1.0, 0.0, 100.0],
+            [0.0, -1.0, 0.0, 100.0],
+            [0.0, 0.0, 1.0, 100.0],
+            [0.0, 0.0, -1.0, 100.0],
         ];
         let nodes = [
-            SectionNode { origin: [0, 0, 0], open_faces: 0x3f },
-            SectionNode { origin: [32, 0, 0], open_faces: 0x3f },
+            SectionNode {
+                origin: [0, 0, 0],
+                open_faces: 0x3f,
+            },
+            SectionNode {
+                origin: [32, 0, 0],
+                open_faces: 0x3f,
+            },
         ];
         let visible = visible_indices(&nodes, &planes, [0, 0, 0]);
         assert!(visible.contains(&0));
@@ -417,10 +460,22 @@ mod async_visibility_tests {
     #[test]
     fn cave_graph_walk_traverses_only_mutually_open_section_faces() {
         let nodes = [
-            SectionNode { origin: [0, 0, 0], open_faces: FACE_POS_X },
-            SectionNode { origin: [16, 0, 0], open_faces: FACE_NEG_X | FACE_POS_X },
-            SectionNode { origin: [32, 0, 0], open_faces: FACE_NEG_X },
-            SectionNode { origin: [0, 0, 16], open_faces: 0x3f },
+            SectionNode {
+                origin: [0, 0, 0],
+                open_faces: FACE_POS_X,
+            },
+            SectionNode {
+                origin: [16, 0, 0],
+                open_faces: FACE_NEG_X | FACE_POS_X,
+            },
+            SectionNode {
+                origin: [32, 0, 0],
+                open_faces: FACE_NEG_X,
+            },
+            SectionNode {
+                origin: [0, 0, 16],
+                open_faces: 0x3f,
+            },
         ];
         let visible = visible_indices(&nodes, &all_inside_planes(), [2, 2, 2]);
         assert!(visible.contains(&0));
@@ -431,7 +486,13 @@ mod async_visibility_tests {
 
     #[test]
     fn missing_camera_section_fails_open_to_frustum_results() {
-        let nodes = [SectionNode { origin: [32, 0, 0], open_faces: 0 }];
-        assert_eq!(visible_indices(&nodes, &all_inside_planes(), [0, 0, 0]), vec![0]);
+        let nodes = [SectionNode {
+            origin: [32, 0, 0],
+            open_faces: 0,
+        }];
+        assert_eq!(
+            visible_indices(&nodes, &all_inside_planes(), [0, 0, 0]),
+            vec![0]
+        );
     }
 }

@@ -69,8 +69,7 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_drawMultiDra
         };
         let first_slice = unsafe { slice::from_raw_parts(first_ptr, draw_count as usize) };
         let count_slice = unsafe { slice::from_raw_parts(count_ptr, draw_count as usize) };
-        if first_slice.iter().any(|value| *value < 0)
-            || count_slice.iter().any(|value| *value < 0)
+        if first_slice.iter().any(|value| *value < 0) || count_slice.iter().any(|value| *value < 0)
         {
             return ERR_DRAW_COUNT;
         }
@@ -80,7 +79,9 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_drawMultiDra
             _ => return ERR_PROCEDURE,
         };
         let mut addresses = [0i64; PROC_COUNT];
-        if env.get_long_array_region(&procedures, 0, &mut addresses).is_err()
+        if env
+            .get_long_array_region(&procedures, 0, &mut addresses)
+            .is_err()
             || addresses.iter().any(|address| *address == 0)
         {
             return ERR_PROCEDURE;
@@ -95,7 +96,8 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_drawMultiDra
         let get_boolean: GlGetBooleanv = unsafe { std::mem::transmute(addresses[1] as usize) };
         let is_enabled: GlIsEnabled = unsafe { std::mem::transmute(addresses[2] as usize) };
         let use_program: GlUseProgram = unsafe { std::mem::transmute(addresses[3] as usize) };
-        let bind_vertex_array: GlBindVertexArray = unsafe { std::mem::transmute(addresses[4] as usize) };
+        let bind_vertex_array: GlBindVertexArray =
+            unsafe { std::mem::transmute(addresses[4] as usize) };
         let bind_buffer: GlBindBuffer = unsafe { std::mem::transmute(addresses[5] as usize) };
         let depth_func: GlDepthFunc = unsafe { std::mem::transmute(addresses[6] as usize) };
         let depth_mask: GlDepthMask = unsafe { std::mem::transmute(addresses[7] as usize) };
@@ -168,9 +170,21 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_drawMultiDra
                 previous_blend_src_alpha as u32,
                 previous_blend_dst_alpha as u32,
             );
-            if previous_depth_test { enable(DEPTH_TEST); } else { disable(DEPTH_TEST); }
-            if previous_blend { enable(BLEND); } else { disable(BLEND); }
-            if previous_cull_face { enable(CULL_FACE); } else { disable(CULL_FACE); }
+            if previous_depth_test {
+                enable(DEPTH_TEST);
+            } else {
+                disable(DEPTH_TEST);
+            }
+            if previous_blend {
+                enable(BLEND);
+            } else {
+                disable(BLEND);
+            }
+            if previous_cull_face {
+                enable(CULL_FACE);
+            } else {
+                disable(CULL_FACE);
+            }
         }
         0
     }))

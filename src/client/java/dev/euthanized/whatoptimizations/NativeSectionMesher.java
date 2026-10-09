@@ -53,6 +53,7 @@ public final class NativeSectionMesher {
     private static final int SAMPLE_RATE = Math.max(1,
             Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 4)));
     private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
+    private static final AtomicLong SAMPLED_SECTIONS = new AtomicLong();
     private static final AtomicLong SAMPLED_OUT_SECTIONS = new AtomicLong();
     private static final AtomicLong COMPILED_SECTIONS = new AtomicLong();
     private static final AtomicLong OUTPUT_VERTICES = new AtomicLong();
@@ -76,6 +77,7 @@ public final class NativeSectionMesher {
             return;
         }
 
+        SAMPLED_SECTIONS.incrementAndGet();
         long snapshotStart = System.nanoTime();
         try {
             ByteBuffer input = snapshot(sectionPos, region);
@@ -120,8 +122,9 @@ public final class NativeSectionMesher {
                 long avgNativeMicros = NATIVE_NANOS.get() / sectionCount / 1_000L;
                 long avgCopyCacheMicros = COPY_CACHE_NANOS.get() / sectionCount / 1_000L;
                 LOGGER.info(
-                        "Rust shadow mesher: callbacks {} (sampled {}, skipped {} at 1/{}) | {} cumulative vertices (last {}) | failures {} | avg snapshot/native/copy+cache {} / {} / {} us | cache {} sections / {} MiB; vanilla rendering remains active",
+                        "Rust shadow mesher: callbacks {} (selected {}, successful {}, skipped {} at 1/{}) | {} cumulative vertices (last {}) | failures {} | avg snapshot/native/copy+cache {} / {} / {} us | cache {} sections / {} MiB; vanilla rendering remains active",
                         SECTION_CALLBACKS.get(),
+                        SAMPLED_SECTIONS.get(),
                         sectionCount,
                         SAMPLED_OUT_SECTIONS.get(),
                         SAMPLE_RATE,

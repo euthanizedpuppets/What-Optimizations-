@@ -437,7 +437,7 @@ fn mesh_section(input: &[u8], output: &mut [u8]) -> Result<usize, jint> {
     Ok(vertices)
 }
 
-fn mesh_jni(mut env: JNIEnv, input: JByteBuffer, output: JByteBuffer) -> jint {
+fn mesh_jni(env: JNIEnv, input: JByteBuffer, output: JByteBuffer) -> jint {
     let input_capacity = match env.get_direct_buffer_capacity(&input) {
         Ok(value) if value >= HEADER_BYTES => value,
         _ => return ERR_DIRECT_BUFFER,
@@ -625,7 +625,7 @@ mod tests {
             }
         }
 
-        assert_eq!(solids.len(), CELL_COUNT / 2);
+        assert_eq!(solids.len(), (16 * 16 * 16) / 2);
         let input = fixture(&solids);
         let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
         assert_eq!(mesh_section(&input, &mut output).unwrap(), MAX_VERTICES);

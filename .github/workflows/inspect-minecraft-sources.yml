@@ -1,0 +1,113 @@
+name: Inspect Minecraft 26.2 Sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-minecraft-sources.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+      - name: Generate the exact Minecraft 26.2 decompiled sources
+        run: gradle genSources --stacktrace
+      - name: Extract verified section compiler signatures and source
+        shell: bash
+        run: |
+          mkdir -p build/minecraft-26.2-source-audit
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, BadZipFile
+          import re
+
+          roots = [Path.home() / ".gradle", Path(".")]
+          targets = {
+              "SectionCompiler.java",
+              "SectionRenderDispatcher.java",
+              "RenderSectionRegion.java",
+              "BlockState.java",
+              "BlockBehaviour.java",
+              "BlockStateBase.java",
+              "BlockModelRenderer.java",
+          }
+          found = {}
+          scanned = 0
+
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  if path.suffix == ".java" and path.name in targets:
+                      found.setdefault(path.name, (str(path), path.read_text(errors="replace")))
+                  elif path.suffix == ".jar":
+                      scanned += 1
+                      try:
+                          with ZipFile(path) as archive:
+                              matches = [name for name in archive.namelist()
+                                         if name.rsplit("/", 1)[-1] in targets and name.endswith(".java")]
+                              for name in matches:
+                                  if name.rsplit("/", 1)[-1] not in found:
+                                      found[name.rsplit("/", 1)[-1]] = (
+                                          f"{path}!/{name}", archive.read(name).decode("utf-8", "replace"))
+                      except (BadZipFile, OSError):
+                          pass
+
+          out = Path("build/minecraft-26.2-source-audit")
+          out.mkdir(parents=True, exist_ok=True)
+          with (out / "source-index.txt").open("w") as index:
+              index.write(f"java/jar files scanned: {scanned}\n")
+              for name, (origin, source) in sorted(found.items()):
+                  index.write(f"{name}: {origin}\n")
+                  (out / name).write_text(source)
+                  print(f"\n===== VERIFIED 26.2 SOURCE: {name} ({origin}) =====")
+                  lines = source.splitlines()
+                  if name == "SectionCompiler.java":
+                      ranges = [(0, len(lines))]
+                  elif name == "RenderSectionRegion.java":
+                      ranges = [(0, len(lines))]
+                  elif name == "SectionRenderDispatcher.java":
+                      needles = ["compileAsync(", "compileSync(", "class RenderSection", "class CompileTask", "sectionCompiler.compile(", "void rebuildSectionAsync", "CompletableFuture"]
+                      ranges = []
+                      for i, line in enumerate(lines):
+                          if any(n in line for n in needles):
+                              ranges.append((max(0, i - 10), min(len(lines), i + 30)))
+                  else:
+                      needles = ["getRenderShape(", "isSolidRender(", "isAir(", "getFluidState(", "isCollisionShapeFullBlock(", "getShape("]
+                      ranges = []
+                      for i, line in enumerate(lines):
+                          if any(n in line for n in needles):
+                              ranges.append((max(0, i - 3), min(len(lines), i + 5)))
+                  printed = set()
+                  for start, end in ranges:
+                      for i in range(start, end):
+                          if i not in printed:
+                              print(f"{i+1:4}: {lines[i]}")
+                              printed.add(i)
+                      print("----")
+          missing = targets - set(found)
+          print(f"\nSOURCE AUDIT RESULT: found={sorted(found)} missing={sorted(missing)}")
+          if "SectionCompiler.java" not in found or "SectionRenderDispatcher.java" not in found:
+              raise SystemExit("Could not locate the expected Mojang-mapped 26.2 source files after genSources")
+          PY
+      - name: Upload verified 26.2 sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-26.2-source-audit
+          path: build/minecraft-26.2-source-audit/
+          if-no-files-found: error
+          retention-days: 7

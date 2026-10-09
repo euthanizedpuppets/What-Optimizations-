@@ -2,23 +2,25 @@ package dev.euthanized.whatoptimizations.mixin;
 
 import dev.euthanized.whatoptimizations.NativeRendererControls;
 import dev.euthanized.whatoptimizations.NativeSectionMesher;
-import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Adds renderer telemetry to the F3 game-information panel. */
+/** Adds native renderer telemetry to the left column of Minecraft 26.2's F3 overlay. */
 @Mixin(targets = "net.minecraft.client.gui.components.DebugScreenOverlay", remap = false)
 public abstract class DebugScreenOverlayMixin {
-    @Inject(method = "getGameInformation", at = @At("RETURN"))
-    private void whatOptimizations$addNativeRendererStats(CallbackInfoReturnable<List<String>> cir) {
-        List<String> vanilla = cir.getReturnValue();
-        if (vanilla == null) {
+    @Inject(method = "extractLines", at = @At("HEAD"))
+    private void whatOptimizations$addNativeRendererStats(
+            GuiGraphicsExtractor graphics,
+            List<String> lines,
+            boolean alignLeft,
+            CallbackInfo ci) {
+        if (!alignLeft) {
             return;
         }
-        List<String> lines = new ArrayList<>(vanilla);
         lines.add("What-Optimizations: draw=" + (NativeRendererControls.rendererEnabled() ? "ON" : "OFF")
                 + " [F8 toggle] | F9 diagnostics | F7 stop/start Rust mesher");
         lines.add("Native sections: callbacks=" + NativeSectionMesher.callbacks()
@@ -34,7 +36,6 @@ public abstract class DebugScreenOverlayMixin {
         lines.add("Visible native sections=" + NativeRendererControls.visibleSections()
                 + " / tracked section nodes=" + NativeRendererControls.totalSections());
         lines.add("Debug diff=" + (NativeSectionMesher.isDebugMode()
-                ? "Rust synchronous vs asynchronous output" : "off; press F9"));
-        cir.setReturnValue(lines);
+                ? "vanilla SOLID geometry + sync/async Rust output" : "off; press F9"));
     }
 }

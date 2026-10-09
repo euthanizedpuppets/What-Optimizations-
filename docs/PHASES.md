@@ -1,31 +1,45 @@
 # Implementation phases
 
-## Phase 0 — scaffold (this branch)
+## Phase 0 — scaffold
 
-- [x] Gradle/Fabric client mod scaffold for Minecraft 26.2 and Java 25.
+- [x] Gradle/Fabric scaffold for Minecraft 26.2 and Java 25.
 - [x] Rust cdylib using jni and rayon.
-- [x] Native library extraction and System.load.
-- [x] Native.hello with Rust stdout output and an integer error status.
-- [x] OpenGL preference mixins adapted from BackToGL's 26.2 implementation.
-- [x] GitHub Actions matrix for Linux x86_64, Windows x86_64, and macOS arm64 native builds plus a mod jar artifact.
-- [ ] Launch Minecraft and verify actual backend selection on a real 26.2 installation.
+- [x] Platform library extraction and System.load.
+- [x] Native.hello() smoke test.
+- [x] OpenGL preference mixins adapted from the concrete BackToGL 26.2 implementation.
+- [x] Cross-platform GitHub Actions native build and mod JAR packaging.
+- [x] CI build passed.
+- [ ] In-game startup and actual backend preference still need verification.
 
-**Phase 0 status:** scaffold committed; CI build must pass and runtime backend selection still needs an in-game smoke test. Do not proceed to Phase 1 until this phase is confirmed.
+## Phase 1 — conservative Rust section meshing (shadow mode)
 
-## Phase 1 — Rust section meshing (not implemented)
+- [x] Generated exact Minecraft 26.2 sources with Loom genSources in CI.
+- [x] Verified real target: SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack).
+- [x] Injected at compile RETURN, preserving the completed vanilla result.
+- [x] Java creates an 18×18×18 direct-buffer snapshot with a unique state palette, raw block-state registry IDs, face flags, and block/sky light values.
+- [x] Native ABI validates header, dimensions, palette IDs, byte offsets and output capacity.
+- [x] JNI is section-granular and Rust panics are contained before returning to Java.
+- [x] Rayon handles six face directions on its worker pool.
+- [x] Rust culls faces adjacent to occluding states and greedily merges uniform coplanar faces.
+- [x] Emits 16-byte triangle-list vertices compatible with OpenGL 3.3 topology.
+- [x] Initial approximate AO/light corner sampling.
+- [x] Bounded 16 MiB native output cache.
+- [x] Unit tests: empty section, isolated cube, adjacent-cube greedy merge, padded-neighbor culling, malformed header, invalid palette index, insufficient output buffer.
+- [ ] CI compile/tests must pass for this Phase 1 commit.
+- [ ] Run Minecraft 26.2 and check native meshing logs with known arrangements.
+- [ ] Compare AO/light values against vanilla.
+- [ ] Upload/draw, correct atlas UVs, biome tint, material/render-layer identity, non-cube model handling and block entity rendering are not implemented.
 
-Before writing mixins, inspect the exact 26.2 decompiled sources using gradle genSources and identify the real section compiler, block-state storage/palette, block render shape, and lighting access points. Do not guess names or descriptors.
-
-The Java side should marshal one complete section plus required neighbor border data into a direct ByteBuffer. Rust should process sections in parallel, with no JNI call per block or quad. Output should use a documented packed vertex format no larger than 16 bytes per vertex. Face culling, greedy merging, ambient occlusion, and light packing must be validated against vanilla output. Render-layer/material distinctions and non-cube models require explicit fallback handling; they cannot be safely meshed as generic cubes.
+Safety boundary: native output is shadow data only. Vanilla is still the visible renderer. Do not use the native cache as a full section replacement mesh. Only full opaque model cubes without fluid and block entity are classified as meshable. Plants, stairs/slabs, transparent geometry, fluids, and custom models stay on vanilla.
 
 ## Phase 2 — visibility (not implemented)
 
-Compute frustum visibility per frame and investigate a cave-visibility graph based on section connectivity. Return a compact visible-section list through one bulk JNI call per frame. Validate against vanilla in open terrain, caves, water, and sections with disconnected openings.
+Compute per-frame frustum visibility and investigate a section-connectivity/cave-culling graph. Return a compact visible-section list through a bulk JNI call. Validate in open terrain, caves, and water before changing rendering.
 
-## Phase 3 — draw path (not implemented)
+## Phase 3 — custom draw path (not implemented)
 
-Use a large vertex buffer with a bounded suballocator and explicit lifetime/fence handling. Draw visible spans in batches. Keep Minecraft's GL state and resource lifetime rules intact. Check OpenGL 3.3 baseline support and gate newer features behind detected extensions.
+Implement GPU upload on the render thread, a bounded suballocator, and a custom OpenGL 3.3 core draw path. Preserve Minecraft graphics state and resource lifetimes. The current packed buffer is triangle-list data; OpenGL core does not support GL_QUADS.
 
-## Phase 4 — optional Rust OpenGL calls (stretch, not implemented)
+## Phase 4 — optional Rust GL calls (stretch, not implemented)
 
-Only after the Java-owned draw path is correct. Resolve GL entry points on the render thread, preserve/restore relevant state, and fail closed if the context/thread is wrong. Do not call OpenGL from Rayon worker threads.
+Only after Java-owned upload and draw work. Resolve GL functions on the render thread, restore all mutated state and fail closed when thread/context checks are wrong. Never make GL calls from Rayon workers.

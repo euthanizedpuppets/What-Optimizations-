@@ -403,9 +403,14 @@ final class NativeOpenGLRenderer {
         byte[] packed = mesh.bytes();
         ByteBuffer source = ByteBuffer.wrap(packed).order(ByteOrder.nativeOrder());
         ByteBuffer target = ByteBuffer.allocateDirect(packed.length).order(ByteOrder.nativeOrder());
-        int originX = unpackX(mesh.sectionKey());
-        int originY = unpackY(mesh.sectionKey());
-        int originZ = unpackZ(mesh.sectionKey());
+        // SectionPos.asLong stores SECTION coordinates, while vertex positions
+        // and the MVP below are in BLOCK/world coordinates. Convert the origin
+        // before adding the 0..16 local mesh coordinates; without this shift,
+        // the diagnostic geometry is drawn near the world origin and never
+        // lines up with the vanilla chunk it represents.
+        int originX = unpackX(mesh.sectionKey()) << 4;
+        int originY = unpackY(mesh.sectionKey()) << 4;
+        int originZ = unpackZ(mesh.sectionKey()) << 4;
         for (int offset = 0; offset < packed.length; offset += Native.MESH_VERTEX_STRIDE) {
             float x = originX + Byte.toUnsignedInt(packed[offset]);
             float y = originY + Byte.toUnsignedInt(packed[offset + 1]);

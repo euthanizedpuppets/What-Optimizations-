@@ -9,7 +9,7 @@ public final class WhatOptimizationsClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("What-Optimizations Phase 1 shadow mesher initialized (Minecraft 26.2 / native shadow mode).");
+        LOGGER.info("What-Optimizations initialized (Minecraft 26.2 / Rust async mesher). F8 toggles the native GL pass; F9 diagnostics; F7 stops/starts meshing.");
         try {
             Native.hello();
             LOGGER.info("Rust JNI smoke test completed successfully.");

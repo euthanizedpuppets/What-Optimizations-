@@ -26,11 +26,10 @@ public final class NativeRendererControls {
     }
 
     public static void tick() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.getWindow() == null) {
+        long window = GLFW.glfwGetCurrentContext();
+        if (window == 0L) {
             return;
         }
-        long window = minecraft.getWindow().getWindow();
         boolean f8 = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_F8) == GLFW.GLFW_PRESS;
         boolean f9 = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_F9) == GLFW.GLFW_PRESS;
         boolean f7 = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_F7) == GLFW.GLFW_PRESS;

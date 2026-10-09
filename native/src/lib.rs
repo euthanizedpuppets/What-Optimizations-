@@ -326,8 +326,11 @@ fn mesh_direction(
     palette: &[PaletteEntry],
     cells: &[Cell],
 ) -> Vec<Vertex> {
-    let mut out = Vec::with_capacity(4096);
-    let mut mask: Vec<Option<FaceCell>> = vec![None; 16 * 16];
+    // Typical section faces are much smaller than the worst case. Avoid
+    // reserving 64 KiB per direction on every section compile; grow only for
+    // unusually complex surfaces. The fixed greedy mask is small stack data.
+    let mut out = Vec::with_capacity(512);
+    let mut mask: [Option<FaceCell>; 16 * 16] = [None; 16 * 16];
 
     for slice in 0..16 {
         mask.fill(None);

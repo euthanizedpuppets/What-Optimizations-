@@ -199,14 +199,12 @@ fn occludes(palette: &[PaletteEntry], cells: &[Cell], pos: [usize; 3]) -> bool {
     entry_for(palette, cell_at(cells, pos)).flags & FLAG_OCCLUDES != 0
 }
 
-fn attributes_for_corner(
+fn attributes_for_face(
     spec: FaceSpec,
     grid_pos: [usize; 3],
-    u_sign: isize,
-    v_sign: isize,
     palette: &[PaletteEntry],
     cells: &[Cell],
-) -> Attr {
+) -> [Attr; 4] {
     let mut outside = grid_pos;
     if spec.positive {
         outside[spec.normal] += 1;
@@ -214,27 +212,57 @@ fn attributes_for_corner(
         outside[spec.normal] -= 1;
     }
 
-    let mut side_u = outside;
-    let mut side_v = outside;
-    side_u[spec.u_axis] = (side_u[spec.u_axis] as isize + u_sign) as usize;
-    side_v[spec.v_axis] = (side_v[spec.v_axis] as isize + v_sign) as usize;
-    let mut corner = side_u;
-    corner[spec.v_axis] = (corner[spec.v_axis] as isize + v_sign) as usize;
-
-    let su = occludes(palette, cells, side_u) as u8;
-    let sv = occludes(palette, cells, side_v) as u8;
-    let co = occludes(palette, cells, corner) as u8;
-    let ao = if su != 0 && sv != 0 { 0 } else { 3 - su - sv - co };
-
-    let n = cell_at(cells, outside);
-    let u = cell_at(cells, side_u);
-    let v = cell_at(cells, side_v);
-    let c = cell_at(cells, corner);
-    Attr {
-        sky: ((u16::from(n.sky) + u16::from(u.sky) + u16::from(v.sky) + u16::from(c.sky)) / 4) as u8,
-        block: ((u16::from(n.block) + u16::from(u.block) + u16::from(v.block) + u16::from(c.block)) / 4) as u8,
-        ao,
+    // All four face corners sample the same 3x3 neighborhood on the outside
+    // plane. Load it once instead of repeating up to 28 cell/palette lookups
+    // per face corner.
+    let empty = Cell {
+        palette_index: 0,
+        sky: 0,
+        block: 0,
+    };
+    let mut neighborhood = [empty; 9];
+    let mut opaque = [false; 9];
+    for v in 0..3 {
+        for u in 0..3 {
+            let mut pos = outside;
+            pos[spec.u_axis] = (outside[spec.u_axis] as isize + u as isize - 1) as usize;
+            pos[spec.v_axis] = (outside[spec.v_axis] as isize + v as isize - 1) as usize;
+            let index = v * 3 + u;
+            let cell = cell_at(cells, pos);
+            neighborhood[index] = cell;
+            opaque[index] = entry_for(palette, cell).flags & FLAG_OCCLUDES != 0;
+        }
     }
+
+    let corners = [(0usize, 0usize), (2, 0), (2, 2), (0, 2)];
+    let mut attrs = [Attr { sky: 0, block: 0, ao: 0 }; 4];
+    for (index, (u, v)) in corners.into_iter().enumerate() {
+        let side_u_index = 3 + u;
+        let side_v_index = v * 3 + 1;
+        let corner_index = v * 3 + u;
+        let side_u = neighborhood[side_u_index];
+        let side_v = neighborhood[side_v_index];
+        let corner = neighborhood[corner_index];
+
+        let su = opaque[side_u_index] as u8;
+        let sv = opaque[side_v_index] as u8;
+        let co = opaque[corner_index] as u8;
+        let ao = if su != 0 && sv != 0 { 0 } else { 3 - su - sv - co };
+        let center = neighborhood[4];
+
+        attrs[index] = Attr {
+            sky: ((u16::from(center.sky)
+                + u16::from(side_u.sky)
+                + u16::from(side_v.sky)
+                + u16::from(corner.sky)) / 4) as u8,
+            block: ((u16::from(center.block)
+                + u16::from(side_u.block)
+                + u16::from(side_v.block)
+                + u16::from(corner.block)) / 4) as u8,
+            ao,
+        };
+    }
+    attrs
 }
 
 fn face_cell(
@@ -245,12 +273,7 @@ fn face_cell(
 ) -> FaceCell {
     let cell = cell_at(cells, grid_pos);
     let block = entry_for(palette, cell);
-    let attrs = [
-        attributes_for_corner(spec, grid_pos, -1, -1, palette, cells),
-        attributes_for_corner(spec, grid_pos,  1, -1, palette, cells),
-        attributes_for_corner(spec, grid_pos,  1,  1, palette, cells),
-        attributes_for_corner(spec, grid_pos, -1,  1, palette, cells),
-    ];
+    let attrs = attributes_for_face(spec, grid_pos, palette, cells);
     let mergeable = attrs.iter().all(|attr| *attr == attrs[0]);
     FaceCell { state_id: block.state_id, attrs, mergeable }
 }
@@ -632,6 +655,20 @@ mod tests {
         let input = fixture(&solids);
         let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
         assert_eq!(mesh_section(&input, &mut output).unwrap(), MAX_VERTICES);
+    }
+
+    #[test]
+    fn isolated_cube_keeps_expected_uniform_corner_light_and_ao() {
+        let input = fixture(&[[8, 8, 8]]);
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        let vertices = mesh_section(&input, &mut output).unwrap();
+        assert_eq!(vertices, 36);
+
+        for vertex in output[..vertices * VERTEX_STRIDE].chunks_exact(VERTEX_STRIDE) {
+            assert_eq!(vertex[8], 15, "sky light should remain fully lit in this fixture");
+            assert_eq!(vertex[9], 0, "block light should remain zero in this fixture");
+            assert_eq!(vertex[10], 3, "unoccluded corners should retain full AO");
+        }
     }
 
     #[test]

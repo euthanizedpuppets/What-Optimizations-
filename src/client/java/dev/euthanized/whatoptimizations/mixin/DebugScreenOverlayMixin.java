@@ -35,6 +35,6 @@ public abstract class DebugScreenOverlayMixin {
                 + " / tracked section nodes=" + NativeRendererControls.totalSections());
         lines.add("Debug diff=" + (NativeSectionMesher.isDebugMode()
                 ? "Rust synchronous vs asynchronous output" : "off; press F9"));
-        return cir.setReturnValue(lines);
+        cir.setReturnValue(lines);
     }
 }

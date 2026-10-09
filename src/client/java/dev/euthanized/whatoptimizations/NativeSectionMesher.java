@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import net.minecraft.client.renderer.chunk.SectionCompiler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.LightLayer;
@@ -174,7 +175,10 @@ public final class NativeSectionMesher {
         return COMPILED_SECTIONS.get();
     }
 
-    public static void compileShadow(SectionPos sectionPos, RenderSectionRegion region) {
+    public static void compileShadow(
+            SectionPos sectionPos,
+            RenderSectionRegion region,
+            SectionCompiler.Results vanillaResults) {
         if (!ENABLED || !NativeLoader.isLoaded()) {
             return;
         }
@@ -192,6 +196,9 @@ public final class NativeSectionMesher {
             return;
         }
 
+        int[] vanillaFaces = DEBUG_MODE
+                ? NativeMeshDifferential.captureVanillaFaces(sectionPos, region, vanillaResults)
+                : null;
         SAMPLED_SECTIONS.incrementAndGet();
         long snapshotStart = System.nanoTime();
         try {
@@ -201,6 +208,9 @@ public final class NativeSectionMesher {
             int openFaces = SNAPSHOT_WORKSPACE.get().openFaces;
             NativeSectionMeshCache.putMetadata(key, openFaces, generation);
             if (input == null) {
+                if (vanillaFaces != null) {
+                    NativeMeshDifferential.compare(key, vanillaFaces, new byte[0]);
+                }
                 EMPTY_SCAN_NANOS.addAndGet(snapshotNanos);
                 long emptyCount = EMPTY_SECTIONS.incrementAndGet();
                 SNAPSHOT_NANOS.addAndGet(snapshotNanos);
@@ -240,7 +250,7 @@ public final class NativeSectionMesher {
                 return;
             }
             PendingJob job = new PendingJob(
-                    ticket, key, generation, System.nanoTime(), snapshotNanos, expected);
+                    ticket, key, generation, System.nanoTime(), snapshotNanos, expected, vanillaFaces);
             PENDING.put(ticket, job);
             SNAPSHOT_NANOS.addAndGet(snapshotNanos);
         } catch (RuntimeException | LinkageError failure) {
@@ -295,6 +305,7 @@ public final class NativeSectionMesher {
                 output.get(vertices);
                 NativeSectionMeshCache.put(job.sectionKey, vertices);
                 compareDebug(job, vertices);
+                NativeMeshDifferential.compare(job.sectionKey, job.vanillaFaces, vertices);
                 long sectionCount = COMPILED_SECTIONS.incrementAndGet();
                 long totalVertices = OUTPUT_VERTICES.addAndGet(vertexCount);
                 NATIVE_NANOS.addAndGet(nativeQueueNanos);
@@ -419,7 +430,8 @@ public final class NativeSectionMesher {
             long generation,
             long submittedNanos,
             long snapshotNanos,
-            byte[] expectedBytes) {
+            byte[] expectedBytes,
+            int[] vanillaFaces) {
     }
 
     private static ByteBuffer snapshot(SectionPos sectionPos, RenderSectionRegion region) {

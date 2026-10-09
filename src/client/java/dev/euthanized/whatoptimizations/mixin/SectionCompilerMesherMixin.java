@@ -36,6 +36,6 @@ public abstract class SectionCompilerMesherMixin {
             SectionBufferBuilderPack builders,
             CallbackInfoReturnable<SectionCompiler.Results> cir) {
         NativeSectionMesher.endVanillaCompileTiming();
-        NativeSectionMesher.compileShadow(sectionPos, region);
+        NativeSectionMesher.compileShadow(sectionPos, region, cir.getReturnValue());
     }
 }

@@ -101,6 +101,7 @@ public final class NativeSectionMesher {
                     STALE_RESULTS.incrementAndGet();
                 }
             }
+            NativeSectionMeshCache.clear();
         }
     }
 

@@ -42,6 +42,9 @@ jobs:
               "BlockBehaviour.java",
               "BlockStateBase.java",
               "BlockModelRenderer.java",
+              "Block.java",
+              "LightLayer.java",
+              "LayerLightEventListener.java",
           }
           found = {}
           scanned = 0
@@ -87,7 +90,7 @@ jobs:
                           if any(n in line for n in needles):
                               ranges.append((max(0, i - 10), min(len(lines), i + 30)))
                   else:
-                      needles = ["getRenderShape(", "isSolidRender(", "isAir(", "getFluidState(", "isCollisionShapeFullBlock(", "getShape("]
+                      needles = ["getRenderShape(", "isSolidRender(", "isAir(", "getFluidState(", "isCollisionShapeFullBlock(", "getShape(", "getId(BlockState", "getId(final BlockState", "getLayerListener(", "getLightValue("]
                       ranges = []
                       for i, line in enumerate(lines):
                           if any(n in line for n in needles):

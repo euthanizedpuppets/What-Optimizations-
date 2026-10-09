@@ -499,9 +499,16 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_hello0(
     _class: JClass,
 ) -> jint {
     catch_unwind(AssertUnwindSafe(|| {
-        println!("[What-Optimizations/Rust] Native.hello() says hello from Rust!");
+        // Construct the bounded helper pool during mod initialization rather
+        // than charging its thread-creation cost to the first chunk section.
+        let worker_count = pool().current_num_threads();
+        println!(
+            "[What-Optimizations/Rust] Native.hello() succeeded; {} meshing workers prewarmed",
+            worker_count
+        );
         0
-    })).unwrap_or(ERR_PANIC)
+    }))
+    .unwrap_or(ERR_PANIC)
 }
 
 /// Return: non-negative count of 16-byte vertices or a negative ABI error code.

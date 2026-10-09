@@ -88,7 +88,7 @@ final class NativeOpenGLRenderer {
             }
 
             Minecraft minecraft = Minecraft.getInstance();
-            Vec3 camera = minecraft.gameRenderer.getMainCamera().getPosition();
+            Vec3 camera = minecraft.gameRenderer.mainCamera().position();
             Matrix4f mvp = makeMvp(camera);
             ByteBuffer records = SECTION_RECORDS.get();
             records.clear();

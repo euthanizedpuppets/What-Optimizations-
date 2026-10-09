@@ -36,6 +36,13 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+jar {
+    from('LICENSE') {
+        into 'META-INF'
+        rename { 'LICENSE_what-optimizations' }
+    }
+}
+
 processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') {

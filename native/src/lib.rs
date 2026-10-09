@@ -3,7 +3,7 @@
 //! One input and one output direct ByteBuffer are exchanged per section compile.
 //! Native output is packed triangle-list data; vanilla still draws its own mesh.
 
-use jni::objects::{JClass, JObject};
+use jni::objects::{JByteBuffer, JClass};
 use jni::sys::jint;
 use jni::JNIEnv;
 use rayon::prelude::*;
@@ -437,7 +437,7 @@ fn mesh_section(input: &[u8], output: &mut [u8]) -> Result<usize, jint> {
     Ok(vertices)
 }
 
-fn mesh_jni(mut env: JNIEnv, input: JObject, output: JObject) -> jint {
+fn mesh_jni(mut env: JNIEnv, input: JByteBuffer, output: JByteBuffer) -> jint {
     let input_capacity = match env.get_direct_buffer_capacity(&input) {
         Ok(value) if value >= HEADER_BYTES => value,
         _ => return ERR_DIRECT_BUFFER,
@@ -481,8 +481,8 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_hello0(
 pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_meshSection0(
     env: JNIEnv,
     _class: JClass,
-    input: JObject,
-    output: JObject,
+    input: JByteBuffer,
+    output: JByteBuffer,
 ) -> jint {
     catch_unwind(AssertUnwindSafe(|| mesh_jni(env, input, output))).unwrap_or(ERR_PANIC)
 }

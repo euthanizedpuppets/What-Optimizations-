@@ -580,6 +580,58 @@ mod tests {
 
 
     #[test]
+    fn face_mask_limits_output_to_enabled_directions() {
+        let mut input = fixture(&[[8, 8, 8]]);
+        let palette_offset = read_u32(&input, 24).unwrap() as usize;
+        let solid_entry = palette_offset + PALETTE_ENTRY_BYTES;
+        input[solid_entry + 5] = 1 << 0;
+
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        let vertices = mesh_section(&input, &mut output).unwrap();
+        assert_eq!(vertices, 6);
+        for vertex in output[..vertices * VERTEX_STRIDE].chunks_exact(VERTEX_STRIDE) {
+            assert_eq!(vertex[3], 0);
+        }
+    }
+
+    #[test]
+    fn non_meshable_opaque_cells_emit_no_faces() {
+        let mut input = fixture(&[[8, 8, 8]]);
+        let palette_offset = read_u32(&input, 24).unwrap() as usize;
+        let solid_entry = palette_offset + PALETTE_ENTRY_BYTES;
+        input[solid_entry + 4] = FLAG_OCCLUDES;
+
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(mesh_section(&input, &mut output).unwrap(), 0);
+    }
+
+    #[test]
+    fn opposite_section_corners_use_the_padding_without_out_of_bounds_access() {
+        let input = fixture(&[[0, 0, 0], [15, 15, 15]]);
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(mesh_section(&input, &mut output).unwrap(), 72);
+    }
+
+    #[test]
+    fn checkerboard_opaque_section_fits_maximum_output_capacity() {
+        let mut solids = Vec::with_capacity(CELL_COUNT / 2);
+        for z in 0..16 {
+            for y in 0..16 {
+                for x in 0..16 {
+                    if (x + y + z) % 2 == 0 {
+                        solids.push([x, y, z]);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(solids.len(), CELL_COUNT / 2);
+        let input = fixture(&solids);
+        let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];
+        assert_eq!(mesh_section(&input, &mut output).unwrap(), MAX_VERTICES);
+    }
+
+    #[test]
     fn single_cube_emits_all_six_faces_with_valid_local_coordinates() {
         let input = fixture(&[[8, 8, 8]]);
         let mut output = vec![0; MAX_VERTICES * VERTEX_STRIDE];

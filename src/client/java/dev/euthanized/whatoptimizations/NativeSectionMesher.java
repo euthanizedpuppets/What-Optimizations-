@@ -48,9 +48,18 @@ public final class NativeSectionMesher {
 
     private static final boolean ENABLED =
             Boolean.parseBoolean(System.getProperty("whatoptimizations.nativeMesher", "true"));
+    // Shadow mode runs beside vanilla compilation. Sample by default to keep
+    // diagnostics useful without duplicating the full CPU workload on every section.
+    private static final int SAMPLE_RATE = Math.max(1,
+            Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 4)));
+    private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
+    private static final AtomicLong SAMPLED_OUT_SECTIONS = new AtomicLong();
     private static final AtomicLong COMPILED_SECTIONS = new AtomicLong();
     private static final AtomicLong OUTPUT_VERTICES = new AtomicLong();
     private static final AtomicLong FAILED_SECTIONS = new AtomicLong();
+    private static final AtomicLong SNAPSHOT_NANOS = new AtomicLong();
+    private static final AtomicLong NATIVE_NANOS = new AtomicLong();
+    private static final AtomicLong COPY_CACHE_NANOS = new AtomicLong();
     private static final AtomicLong LAST_FAILURE_LOG = new AtomicLong();
 
     private NativeSectionMesher() {
@@ -61,11 +70,22 @@ public final class NativeSectionMesher {
             return;
         }
 
+        long callbackNumber = SECTION_CALLBACKS.incrementAndGet();
+        if ((callbackNumber - 1L) % SAMPLE_RATE != 0L) {
+            SAMPLED_OUT_SECTIONS.incrementAndGet();
+            return;
+        }
+
+        long snapshotStart = System.nanoTime();
         try {
             ByteBuffer input = snapshot(sectionPos, region);
+            long snapshotNanos = System.nanoTime() - snapshotStart;
+
             ByteBuffer output = OUTPUT_BUFFER.get();
             output.clear();
+            long nativeStart = System.nanoTime();
             int vertexCount = Native.meshSection(input, output);
+            long nativeNanos = System.nanoTime() - nativeStart;
             if (vertexCount < 0) {
                 recordFailure("Rust returned native error " + vertexCount, null);
                 return;
@@ -77,6 +97,7 @@ public final class NativeSectionMesher {
                 return;
             }
 
+            long copyCacheStart = System.nanoTime();
             int outputBytes = (int) bytesLong;
             byte[] vertices = new byte[outputBytes];
             output.position(0);
@@ -86,17 +107,30 @@ public final class NativeSectionMesher {
             BlockPos origin = sectionPos.origin();
             long key = BlockPos.asLong(origin.getX(), origin.getY(), origin.getZ());
             NativeSectionMeshCache.put(key, vertices);
+            long copyCacheNanos = System.nanoTime() - copyCacheStart;
 
             long sectionCount = COMPILED_SECTIONS.incrementAndGet();
             long totalVertices = OUTPUT_VERTICES.addAndGet(vertexCount);
+            SNAPSHOT_NANOS.addAndGet(snapshotNanos);
+            NATIVE_NANOS.addAndGet(nativeNanos);
+            COPY_CACHE_NANOS.addAndGet(copyCacheNanos);
             boolean firstNonEmptySection = vertexCount > 0 && totalVertices == vertexCount;
             if (sectionCount == 1L || firstNonEmptySection || (sectionCount & 255L) == 0L) {
+                long avgSnapshotMicros = SNAPSHOT_NANOS.get() / sectionCount / 1_000L;
+                long avgNativeMicros = NATIVE_NANOS.get() / sectionCount / 1_000L;
+                long avgCopyCacheMicros = COPY_CACHE_NANOS.get() / sectionCount / 1_000L;
                 LOGGER.info(
-                        "Rust shadow mesher: {} sections, {} cumulative packed vertices (last section {}), {} failed sections, {} cached sections / {} MiB; vanilla rendering remains active",
+                        "Rust shadow mesher: callbacks {} (sampled {}, skipped {} at 1/{}) | {} cumulative vertices (last {}) | failures {} | avg snapshot/native/copy+cache {} / {} / {} us | cache {} sections / {} MiB; vanilla rendering remains active",
+                        SECTION_CALLBACKS.get(),
                         sectionCount,
+                        SAMPLED_OUT_SECTIONS.get(),
+                        SAMPLE_RATE,
                         totalVertices,
                         vertexCount,
                         FAILED_SECTIONS.get(),
+                        avgSnapshotMicros,
+                        avgNativeMicros,
+                        avgCopyCacheMicros,
                         NativeSectionMeshCache.sectionCount(),
                         NativeSectionMeshCache.cachedBytes() / (1024L * 1024L));
             }

@@ -58,6 +58,7 @@ JVM properties:
 - `-Dwhatoptimizations.nativeMesher.debug=true` starts F9 diagnostics enabled.
 - `-Dwhatoptimizations.nativeRenderer=true` starts the experimental GL pass enabled.
 - `-Dwhatoptimizations.nativeRenderer.rustGl=false` forces the LWJGL `glMultiDrawArrays` fallback instead of calling GL draw functions from Rust.
+- `-Dwhatoptimizations.nativeRenderer.bufferStorage=true` opts into immutable GL 4.4 / `ARB_buffer_storage` allocation with dynamic sub-updates; unsupported drivers automatically use the GL 3.3 mutable-buffer fallback.
 
 The F3 panel shows section callbacks, selected/completed/pending jobs, stale results, failures, average vanilla compile and native-stage times, and visible/tracked section counts. The icon is packaged at `src/main/resources/What.png` and referenced by `fabric.mod.json`.
 

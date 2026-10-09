@@ -57,6 +57,20 @@ tasks.register('buildNative', Exec) {
     commandLine 'cargo', 'build', '--release', '--manifest-path', 'native/Cargo.toml'
 }
 
+tasks.register('nativeTest', Exec) {
+    group = 'verification'
+    description = 'Runs the Rust mesher, async ticket, and visibility regression tests.'
+    workingDir projectDir
+    commandLine 'cargo', 'test', '--manifest-path', 'native/Cargo.toml'
+}
+
+tasks.register('nativeFormatCheck', Exec) {
+    group = 'verification'
+    description = 'Checks Rust source formatting without modifying files.'
+    workingDir projectDir
+    commandLine 'cargo', 'fmt', '--manifest-path', 'native/Cargo.toml', '--all', '--', '--check'
+}
+
 tasks.register('stageNative') {
     group = 'build'
     description = 'Stages this host platform native library into generated jar resources.'

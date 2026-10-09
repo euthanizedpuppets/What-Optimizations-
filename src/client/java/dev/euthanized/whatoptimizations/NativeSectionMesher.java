@@ -54,6 +54,8 @@ public final class NativeSectionMesher {
     private static final int SAMPLE_RATE = Math.max(1,
             Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 8)));
     private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
+    private static final AtomicLong EMPTY_SECTIONS = new AtomicLong();
+    private static final AtomicLong EMPTY_SCAN_NANOS = new AtomicLong();
     private static final AtomicLong SAMPLED_SECTIONS = new AtomicLong();
     private static final AtomicLong SAMPLED_OUT_SECTIONS = new AtomicLong();
     private static final AtomicLong COMPILED_SECTIONS = new AtomicLong();
@@ -83,6 +85,20 @@ public final class NativeSectionMesher {
         try {
             ByteBuffer input = snapshot(sectionPos, region);
             long snapshotNanos = System.nanoTime() - snapshotStart;
+            if (input == null) {
+                BlockPos origin = sectionPos.origin();
+                long key = BlockPos.asLong(origin.getX(), origin.getY(), origin.getZ());
+                NativeSectionMeshCache.invalidate(key);
+                EMPTY_SCAN_NANOS.addAndGet(snapshotNanos);
+                long emptyCount = EMPTY_SECTIONS.incrementAndGet();
+                if (emptyCount == 1L || (emptyCount & 255L) == 0L) {
+                    LOGGER.info(
+                            "Rust shadow mesher: skipped native work for {} sampled sections with no meshable interior cubes; average empty scan {} us; vanilla rendering remains active",
+                            emptyCount,
+                            EMPTY_SCAN_NANOS.get() / emptyCount / 1_000L);
+                }
+                return;
+            }
 
             ByteBuffer output = OUTPUT_BUFFER.get();
             output.clear();
@@ -157,12 +173,10 @@ public final class NativeSectionMesher {
         byte[] block = workspace.block;
         int paletteCount = 0;
 
-        LevelLightEngine lightEngine = region.getLightEngine();
-        LayerLightEventListener skyLight = lightEngine.getLayerListener(LightLayer.SKY);
-        LayerLightEventListener blockLight = lightEngine.getLayerListener(LightLayer.BLOCK);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
         int cell = 0;
+        boolean hasMeshableInterior = false;
         for (int z = 0; z < GRID; z++) {
             for (int y = 0; y < GRID; y++) {
                 for (int x = 0; x < GRID; x++) {
@@ -191,6 +205,29 @@ public final class NativeSectionMesher {
                     }
 
                     cellPalette[cell] = paletteIndex.shortValue();
+                    if (x >= 1 && x <= 16 && y >= 1 && y <= 16 && z >= 1 && z <= 16
+                            && (workspace.paletteFlags[paletteIndex] & FLAG_MESHABLE) != 0) {
+                        hasMeshableInterior = true;
+                    }
+                    cell++;
+                }
+            }
+        }
+
+        // Sections without an admitted opaque cube cannot produce native faces.
+        // Avoid all light lookups, JNI crossing, and Rust traversal for these.
+        if (!hasMeshableInterior) {
+            return null;
+        }
+
+        LevelLightEngine lightEngine = region.getLightEngine();
+        LayerLightEventListener skyLight = lightEngine.getLayerListener(LightLayer.SKY);
+        LayerLightEventListener blockLight = lightEngine.getLayerListener(LightLayer.BLOCK);
+        cell = 0;
+        for (int z = 0; z < GRID; z++) {
+            for (int y = 0; y < GRID; y++) {
+                for (int x = 0; x < GRID; x++) {
+                    pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
                     sky[cell] = (byte) clampLight(skyLight.getLightValue(pos));
                     block[cell] = (byte) clampLight(blockLight.getLightValue(pos));
                     cell++;

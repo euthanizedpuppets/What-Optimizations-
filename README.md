@@ -59,7 +59,7 @@ JVM properties:
 - `-Dwhatoptimizations.nativeRenderer=true` starts the experimental GL pass enabled.
 - `-Dwhatoptimizations.nativeRenderer.rustGl=false` forces the LWJGL `glMultiDrawArrays` fallback instead of calling GL draw functions from Rust.
 
-The F3 panel shows section callbacks, selected/completed/pending jobs, stale results, failures, average vanilla compile and native-stage times, and visible/tracked section counts. The icon is packaged at `src/main/resources/What?.png` and referenced by `fabric.mod.json`.
+The F3 panel shows section callbacks, selected/completed/pending jobs, stale results, failures, average vanilla compile and native-stage times, and visible/tracked section counts. The icon is packaged at `src/main/resources/What.png` and referenced by `fabric.mod.json`.
 
 ## What the current renderer is — and is not
 

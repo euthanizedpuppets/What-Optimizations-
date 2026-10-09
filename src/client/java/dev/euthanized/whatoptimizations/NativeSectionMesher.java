@@ -186,7 +186,7 @@ public final class NativeSectionMesher {
         cancelSupersededJobs(key);
 
         long callbackNumber = SECTION_CALLBACKS.incrementAndGet();
-        if (!FORCE_FULL_CAPTURE && (callbackNumber - 1L) % SAMPLE_RATE != 0L) {
+        if (!FORCE_FULL_CAPTURE && !DEBUG_MODE && (callbackNumber - 1L) % SAMPLE_RATE != 0L) {
             SAMPLED_OUT_SECTIONS.incrementAndGet();
             NativeSectionMeshCache.invalidate(key);
             return;
@@ -307,7 +307,7 @@ public final class NativeSectionMesher {
                             SAMPLED_SECTIONS.get(),
                             sectionCount,
                             SAMPLED_OUT_SECTIONS.get(),
-                            FORCE_FULL_CAPTURE ? 1 : SAMPLE_RATE,
+                            (FORCE_FULL_CAPTURE || DEBUG_MODE) ? 1 : SAMPLE_RATE,
                             PENDING.size(),
                             totalVertices,
                             vertexCount,
@@ -339,8 +339,9 @@ public final class NativeSectionMesher {
             int expectedState = stateIdAt(job.expectedBytes, difference);
             int actualState = stateIdAt(actual, difference);
             LOGGER.warn(
-                    "Rust async/sync mesh mismatch at section key {} generation {} byte {}; first packed state id {} vs {}",
-                    job.sectionKey, job.generation, difference, expectedState, actualState);
+                    "Rust sync/async output mismatch at section ({}, {}, {}) generation {} byte {}; first packed state id {} vs {}",
+                    unpackSectionX(job.sectionKey), unpackSectionY(job.sectionKey), unpackSectionZ(job.sectionKey),
+                    job.generation, difference, expectedState, actualState);
         }
     }
 
@@ -352,6 +353,18 @@ public final class NativeSectionMesher {
             }
         }
         return a.length == b.length ? -1 : count;
+    }
+
+    private static int unpackSectionX(long packed) {
+        return (int) (packed >> 38);
+    }
+
+    private static int unpackSectionY(long packed) {
+        return (int) (packed << 52 >> 52);
+    }
+
+    private static int unpackSectionZ(long packed) {
+        return (int) (packed << 26 >> 38);
     }
 
     private static int stateIdAt(byte[] bytes, int difference) {

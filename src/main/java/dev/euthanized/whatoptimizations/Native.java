@@ -7,6 +7,24 @@ import java.nio.ByteOrder;
 public final class Native {
     public static final int MESH_VERTEX_STRIDE = 16;
 
+    /** WOM2: vanilla BLOCK vertex (position 3f, color 4b ABGR, uv 2f, light 2x i16). */
+    public static final int BLOCK_VERTEX_STRIDE = 28;
+    /** WOM2 tiled vertex: BLOCK fields plus a per-vertex sprite rectangle (4f). */
+    public static final int TILED_VERTEX_STRIDE = 44;
+    public static final int WOM2_HEADER_BYTES = 64;
+    public static final int WOM2_OUTPUT_HEADER_BYTES = 32;
+    public static final int WOM2_LAYER_COUNT = 3;
+    public static final int WOM2_LAYER_TABLE_BYTES = 16;
+    public static final int WOM2_OUTPUT_LAYER_TABLE_BYTES = 24;
+    public static final int LAYER_SOLID = 0;
+    public static final int LAYER_CUTOUT = 1;
+    public static final int LAYER_TRANSLUCENT = 2;
+    /** WOM2 layer ids in fixed slot order (SOLID, CUTOUT, TRANSLUCENT). */
+    public static final int[] LAYER_IDS = {LAYER_SOLID, LAYER_CUTOUT, LAYER_TRANSLUCENT};
+    public static final int MAX_VERTICES_PER_LAYER = 131_072;
+    /** Snapshots larger than this are rejected; the section stays vanilla. */
+    public static final int MAX_INPUT_BYTES = 4 * 1024 * 1024;
+
     private Native() {
     }
 
@@ -41,8 +59,22 @@ public final class Native {
     }
 
     /**
+     * Submits a WOM2 snapshot (captured vanilla vertex streams per layer).
+     * Positive return values are explicit release handles; negative values are
+     * error codes.
+     */
+    public static long submitSectionV2(ByteBuffer input, long sectionKey, long generation) {
+        if (!direct(input)) {
+            return -2;
+        }
+        NativeLoader.ensureLoaded();
+        return submitSectionV2_0(input.order(ByteOrder.nativeOrder()), sectionKey, generation);
+    }
+
+    /**
      * Poll on the render thread. 0 means pending; positive means
-     * vertexCount + 1; negative values are error codes.
+     * vertexCount + 1 for v1 tickets and totalOutputBytes + 1 for WOM2
+     * tickets; negative values are error codes.
      */
     public static int pollCompleted(long ticket, ByteBuffer output) {
         if (!direct(output)) {
@@ -56,34 +88,6 @@ public final class Native {
     public static int release(long ticket) {
         NativeLoader.ensureLoaded();
         return release0(ticket);
-    }
-
-    /**
-     * Runs glMultiDrawArrays from Rust through GLFW-resolved OpenGL entry points.
-     * Call only on the render thread with a current OpenGL context.
-     */
-    public static int drawMultiDrawOpenGL(
-            int program,
-            int vao,
-            int arrayBuffer,
-            ByteBuffer firsts,
-            ByteBuffer counts,
-            int drawCount,
-            long[] procedures) {
-        if (!direct(firsts) || !direct(counts) || procedures == null || drawCount < 0
-                || (long) drawCount * Integer.BYTES > firsts.capacity()
-                || (long) drawCount * Integer.BYTES > counts.capacity()) {
-            return -2;
-        }
-        NativeLoader.ensureLoaded();
-        return drawMultiDrawOpenGL0(
-                program,
-                vao,
-                arrayBuffer,
-                firsts.order(ByteOrder.nativeOrder()),
-                counts.order(ByteOrder.nativeOrder()),
-                drawCount,
-                procedures);
     }
 
     /**
@@ -120,6 +124,8 @@ public final class Native {
 
     private static native long submitSection0(ByteBuffer input, long sectionKey, long generation);
 
+    private static native long submitSectionV2_0(ByteBuffer input, long sectionKey, long generation);
+
     private static native int pollCompleted0(long ticket, ByteBuffer output);
 
     private static native int release0(long ticket);
@@ -131,13 +137,4 @@ public final class Native {
             int cameraX,
             int cameraY,
             int cameraZ);
-
-    private static native int drawMultiDrawOpenGL0(
-            int program,
-            int vao,
-            int arrayBuffer,
-            ByteBuffer firsts,
-            ByteBuffer counts,
-            int drawCount,
-            long[] procedures);
 }

@@ -3,92 +3,77 @@ package dev.euthanized.whatoptimizations;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
-
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import dev.euthanized.whatoptimizations.mixin.SectionCompilerResultsAccess;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
-import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.RenderShape;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.lighting.LayerLightEventListener;
-import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Creates a 18x18x18 padded snapshot, calls Rust exactly once per section and
- * keeps the packed geometry in a bounded cache. This is intentionally shadow
- * mode: vanilla's completed section mesh is never replaced by this output.
+ * Native terrain pipeline driver.
+ *
+ * <p>Worker threads (vanilla section compile tasks) call {@link #onCompileHead}
+ * and {@link #onCompileReturn}; the render thread calls {@link #pollCompleted}
+ * once per frame. The pipeline:
+ *
+ * <ol>
+ *   <li>First build of a section: vanilla compiles normally; at RETURN the
+ *   finished per-layer {@code MeshData} vertex buffers are copied into a WOM2
+ *   snapshot (shadow capture) and submitted to Rust.</li>
+ *   <li>When the Rust job completes, the render thread stages the mesh into the
+ *   GPU store, flips ownership to ACTIVE and queues a vanilla recompile so the
+ *   next compile takes over (vanilla's per-layer meshing is skipped).</li>
+ *   <li>Steady state: at HEAD of a compile for an ACTIVE section, the capture
+ *   runs vanilla's own model/fluid tessellation with capturing consumers,
+ *   submits a new WOM2 snapshot and returns a {@code Results} with empty
+ *   rendered layers — vanilla draws nothing for the section, the native path
+ *   draws its (already uploaded) mesh, and the old mesh keeps drawing until
+ *   the new one is staged.</li>
+ * </ol>
+ *
+ * <p>Every failure path leaves the section with vanilla: exceptions during
+ * capture are swallowed (vanilla proceeds), Rust errors mark the section FAILED
+ * and queue a vanilla recompile, and the kill switch reverts everything.
  */
 public final class NativeSectionMesher {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/mesher");
-    private static final int GRID = 18;
-    private static final int CELL_COUNT = GRID * GRID * GRID;
-    private static final int HEADER_BYTES = 40;
-    private static final int PALETTE_ENTRY_BYTES = 8;
-    private static final int CELL_ENTRY_BYTES = 4;
-    private static final int MAGIC = 0x314D4F57;
-    private static final int VERSION = 1;
-    private static final int FLAG_MESHABLE = 1;
-    private static final int FLAG_OCCLUDES = 2;
-    private static final int MAX_INPUT_BYTES = HEADER_BYTES
-            + CELL_COUNT * PALETTE_ENTRY_BYTES
-            + CELL_COUNT * CELL_ENTRY_BYTES;
-    private static final int MAX_OUTPUT_BYTES = 1_200_000;
 
-    // Section compilation is worker-threaded. Reuse bounded direct buffers per
-    // worker to avoid a 1.2 MiB native allocation for every section compile.
-    private static final ThreadLocal<ByteBuffer> INPUT_BUFFER = ThreadLocal.withInitial(
-            () -> ByteBuffer.allocateDirect(MAX_INPUT_BYTES).order(ByteOrder.nativeOrder()));
+    private static final int MAX_PENDING_JOBS = 32;
+    private static final int OUTPUT_CAPACITY = 12 * 1024 * 1024;
+    private static final int WOM2_MAGIC = 0x32_4D_4F_57;
+    private static final int WOM2_VERSION = 2;
+
     private static final ThreadLocal<ByteBuffer> OUTPUT_BUFFER = ThreadLocal.withInitial(
-            () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.nativeOrder()));
-    private static final ThreadLocal<SnapshotWorkspace> SNAPSHOT_WORKSPACE =
-            ThreadLocal.withInitial(SnapshotWorkspace::new);
+            () -> ByteBuffer.allocateDirect(OUTPUT_CAPACITY).order(ByteOrder.nativeOrder()));
+    private static final ThreadLocal<NativeSectionCapture.CapturedSection> DEBUG_CAPTURE =
+            new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> TOOK_OVER = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private static volatile boolean ENABLED =
             Boolean.parseBoolean(System.getProperty("whatoptimizations.nativeMesher", "true"));
-    // Shadow mode runs beside vanilla compilation. Sample by default to keep
-    // diagnostics useful without duplicating the full CPU workload on every section.
-    private static final int SAMPLE_RATE = Math.max(1,
-            Math.min(64, Integer.getInteger("whatoptimizations.nativeMesher.sampleRate", 8)));
-    private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
-    private static final AtomicLong EMPTY_SECTIONS = new AtomicLong();
-    private static final AtomicLong EMPTY_SCAN_NANOS = new AtomicLong();
-    private static final AtomicLong SAMPLED_SECTIONS = new AtomicLong();
-    private static final AtomicLong SAMPLED_OUT_SECTIONS = new AtomicLong();
-    private static final AtomicLong COMPILED_SECTIONS = new AtomicLong();
-    private static final AtomicLong OUTPUT_VERTICES = new AtomicLong();
-    private static final AtomicLong FAILED_SECTIONS = new AtomicLong();
-    private static final AtomicLong SNAPSHOT_NANOS = new AtomicLong();
-    private static final AtomicLong NATIVE_NANOS = new AtomicLong();
-    private static final AtomicLong COPY_CACHE_NANOS = new AtomicLong();
-    private static final AtomicLong LAST_FAILURE_LOG = new AtomicLong();
+    private static volatile boolean DEBUG_MODE =
+            Boolean.getBoolean("whatoptimizations.nativeMesher.debug");
+
+    private static final ConcurrentMap<Long, PendingJob> PENDING = new ConcurrentHashMap<>();
     private static final AtomicLong GENERATION_SEQUENCE = new AtomicLong();
-    private static final AtomicLong STALE_RESULTS = new AtomicLong();
+    private static final AtomicLong SECTION_CALLBACKS = new AtomicLong();
+    private static final AtomicLong SUBMITTED_JOBS = new AtomicLong();
+    private static final AtomicLong COMPLETED_JOBS = new AtomicLong();
+    private static final AtomicLong FAILED_SECTIONS = new AtomicLong();
+    private static final AtomicLong CAPTURE_NANOS = new AtomicLong();
+    private static final AtomicLong CAPTURE_COUNT = new AtomicLong();
+    private static final AtomicLong NATIVE_NANOS = new AtomicLong();
     private static final AtomicLong VANILLA_COMPILE_NANOS = new AtomicLong();
     private static final AtomicLong VANILLA_COMPILE_COUNT = new AtomicLong();
     private static final ThreadLocal<Long> VANILLA_COMPILE_START = new ThreadLocal<>();
-    private static final int MAX_PENDING_JOBS = 64;
-    private static final ConcurrentMap<Long, PendingJob> PENDING = new ConcurrentHashMap<>();
-    private static final Map<Long, Long> LATEST_GENERATION =
-            Collections.synchronizedMap(new LinkedHashMap<>(256, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<Long, Long> eldest) {
-                    return size() > 32_768;
-                }
-            });
-    private static volatile boolean FORCE_FULL_CAPTURE;
-    private static volatile boolean DEBUG_MODE;
+    private static final AtomicLong LAST_FAILURE_LOG = new AtomicLong();
 
     private NativeSectionMesher() {
     }
@@ -99,19 +84,16 @@ public final class NativeSectionMesher {
             for (Map.Entry<Long, PendingJob> entry : new ArrayList<>(PENDING.entrySet())) {
                 if (PENDING.remove(entry.getKey(), entry.getValue())) {
                     safelyRelease(entry.getKey());
-                    STALE_RESULTS.incrementAndGet();
+                    NativeSectionOwnership.noteStaleResult();
                 }
             }
-            NativeSectionMeshCache.clear();
+            NativeSectionOwnership.clearAll();
+            NativeTerrainStore.get().close();
         }
     }
 
     public static boolean isEnabled() {
         return ENABLED;
-    }
-
-    public static void setForceFullCapture(boolean force) {
-        FORCE_FULL_CAPTURE = force;
     }
 
     public static void setDebugMode(boolean debugMode) {
@@ -122,286 +104,316 @@ public final class NativeSectionMesher {
         return DEBUG_MODE;
     }
 
-    public static void beginVanillaCompileTiming() {
-        VANILLA_COMPILE_START.set(System.nanoTime());
+    static boolean mergeEnabled() {
+        return NativeRendererControls.tiledEnabled() && NativeTiledPipelines.isAvailable();
     }
 
-    public static void endVanillaCompileTiming() {
-        Long started = VANILLA_COMPILE_START.get();
-        VANILLA_COMPILE_START.remove();
-        if (started != null) {
-            VANILLA_COMPILE_NANOS.addAndGet(System.nanoTime() - started);
-            VANILLA_COMPILE_COUNT.incrementAndGet();
+    // ------------------------------------------------------------------
+    // Worker-thread compile hooks
+    // ------------------------------------------------------------------
+
+    /**
+     * HEAD hook. When the section is natively ACTIVE, runs the takeover
+     * capture and returns a replacement {@code Results} with empty rendered
+     * layers (vanilla's per-layer meshing is skipped). Returns null to let
+     * vanilla compile normally.
+     */
+    public static SectionCompiler.Results onCompileHead(
+            Object compiler,
+            SectionPos sectionPos,
+            RenderSectionRegion region) {
+        TOOK_OVER.set(Boolean.FALSE);
+        if (!ENABLED || !NativeLoader.isLoaded() || DEBUG_MODE) {
+            return null;
         }
+        long sectionKey = NativeSectionOwnership.sectionKey(sectionPos);
+        if (NativeSectionOwnership.state(sectionKey) != NativeSectionOwnership.State.ACTIVE) {
+            return null;
+        }
+        long generation = GENERATION_SEQUENCE.incrementAndGet();
+        SECTION_CALLBACKS.incrementAndGet();
+        long start = System.nanoTime();
+        NativeSectionCapture.CapturedSection captured =
+                NativeSectionCapture.captureTakeover(compiler, sectionPos, region, mergeEnabled());
+        if (captured == null) {
+            // Capture failed: fall back to vanilla for this compile and mark
+            // the section failed so vanilla geometry is rebuilt.
+            NativeSectionOwnership.markFailed(sectionKey, "takeover capture failed");
+            return null;
+        }
+        CAPTURE_NANOS.addAndGet(System.nanoTime() - start);
+        CAPTURE_COUNT.incrementAndGet();
+        TOOK_OVER.set(Boolean.TRUE);
+        submitSnapshot(sectionKey, generation, captured, true);
+        return buildTakeoverResults(captured);
     }
 
-    public static long averageSnapshotMicros() {
-        return SNAPSHOT_NANOS.get() / Math.max(1L, SAMPLED_SECTIONS.get()) / 1_000L;
+    private static SectionCompiler.Results buildTakeoverResults(NativeSectionCapture.CapturedSection captured) {
+        SectionCompiler.Results results = new SectionCompiler.Results();
+        results.blockEntities.addAll(captured.blockEntities());
+        ((SectionCompilerResultsAccess) results).whatOptimizations$setVisibilitySet(captured.visibilitySet());
+        // renderedLayers stays empty: vanilla draws nothing for this section.
+        return results;
     }
 
-    public static long averageNativeQueueMicros() {
-        return NATIVE_NANOS.get() / Math.max(1L, COMPILED_SECTIONS.get()) / 1_000L;
-    }
-
-    public static long averageCopyCacheMicros() {
-        return COPY_CACHE_NANOS.get() / Math.max(1L, COMPILED_SECTIONS.get()) / 1_000L;
-    }
-
-    public static long averageVanillaCompileMicros() {
-        return VANILLA_COMPILE_NANOS.get() / Math.max(1L, VANILLA_COMPILE_COUNT.get()) / 1_000L;
-    }
-
-    public static long callbacks() {
-        return SECTION_CALLBACKS.get();
-    }
-
-    public static int pendingJobs() {
-        return PENDING.size();
-    }
-
-    public static long staleResults() {
-        return STALE_RESULTS.get();
-    }
-
-    public static long failures() {
-        return FAILED_SECTIONS.get();
-    }
-
-    public static long sampledSections() {
-        return SAMPLED_SECTIONS.get();
-    }
-
-    public static long completedSections() {
-        return COMPILED_SECTIONS.get();
-    }
-
-    public static void compileShadow(
+    /** RETURN hook. Shadow capture for the first build (and any vanilla compile). */
+    public static void onCompileReturn(
             SectionPos sectionPos,
             RenderSectionRegion region,
             SectionCompiler.Results vanillaResults) {
+        if (TOOK_OVER.get()) {
+            TOOK_OVER.set(Boolean.FALSE);
+            return;
+        }
+        endVanillaCompileTiming();
+        if (!ENABLED || !NativeLoader.isLoaded() || vanillaResults == null) {
+            return;
+        }
+        if (DEBUG_MODE) {
+            // Debug mode also ran the takeover capture at HEAD (without
+            // cancelling vanilla); compare it against vanilla's output.
+            NativeSectionCapture.CapturedSection debugCapture = DEBUG_CAPTURE.get();
+            DEBUG_CAPTURE.remove();
+            if (debugCapture != null) {
+                NativeMeshDifferential.compareCaptures(sectionPos, vanillaResults, debugCapture);
+            }
+        }
+        if (vanillaResults.renderedLayers.isEmpty()) {
+            // Empty section: nothing to capture and vanilla draws nothing
+            // either, so drop any stale native mesh (the section may have
+            // become all-air since the last build).
+            long emptyKey = NativeSectionOwnership.sectionKey(sectionPos);
+            NativeTerrainStore.get().removeSection(emptyKey);
+            NativeSectionOwnership.invalidate(emptyKey);
+            return;
+        }
+        long sectionKey = NativeSectionOwnership.sectionKey(sectionPos);
+        long generation = GENERATION_SEQUENCE.incrementAndGet();
+        SECTION_CALLBACKS.incrementAndGet();
+        long start = System.nanoTime();
+        NativeSectionCapture.CapturedSection captured =
+                NativeSectionCapture.captureShadow(sectionPos, region, vanillaResults, mergeEnabled());
+        if (captured == null) {
+            NativeSectionOwnership.markFailed(sectionKey, "shadow capture failed");
+            return;
+        }
+        CAPTURE_NANOS.addAndGet(System.nanoTime() - start);
+        CAPTURE_COUNT.incrementAndGet();
+        submitSnapshot(sectionKey, generation, captured, false);
+    }
+
+    /** Debug mode: HEAD hook runs the takeover capture without taking over. */
+    public static void captureForDebug(Object compiler, SectionPos sectionPos, RenderSectionRegion region) {
         if (!ENABLED || !NativeLoader.isLoaded()) {
             return;
         }
-
-        BlockPos origin = sectionPos.origin();
-        long key = BlockPos.asLong(origin.getX(), origin.getY(), origin.getZ());
-        long generation = GENERATION_SEQUENCE.incrementAndGet();
-        LATEST_GENERATION.put(key, generation);
-        cancelSupersededJobs(key);
-
-        long callbackNumber = SECTION_CALLBACKS.incrementAndGet();
-        if (!FORCE_FULL_CAPTURE && !DEBUG_MODE && (callbackNumber - 1L) % SAMPLE_RATE != 0L) {
-            SAMPLED_OUT_SECTIONS.incrementAndGet();
-            NativeSectionMeshCache.invalidate(key);
-            return;
-        }
-
-        int[] vanillaFaces = DEBUG_MODE
-                ? NativeMeshDifferential.captureVanillaFaces(sectionPos, region, vanillaResults)
-                : null;
-        SAMPLED_SECTIONS.incrementAndGet();
-        long snapshotStart = System.nanoTime();
-        try {
-            NativeSectionMeshCache.invalidateMesh(key);
-            ByteBuffer input = snapshot(sectionPos, region);
-            long snapshotNanos = System.nanoTime() - snapshotStart;
-            int openFaces = SNAPSHOT_WORKSPACE.get().openFaces;
-            NativeSectionMeshCache.putMetadata(key, openFaces, generation);
-            if (input == null) {
-                if (vanillaFaces != null) {
-                    NativeMeshDifferential.compare(key, vanillaFaces, new byte[0]);
-                }
-                EMPTY_SCAN_NANOS.addAndGet(snapshotNanos);
-                long emptyCount = EMPTY_SECTIONS.incrementAndGet();
-                SNAPSHOT_NANOS.addAndGet(snapshotNanos);
-                if (emptyCount == 1L || (emptyCount & 255L) == 0L) {
-                    LOGGER.info(
-                            "Rust async mesher: skipped native work for {} sampled sections with no meshable interior cubes; average empty scan {} us; vanilla rendering remains active",
-                            emptyCount,
-                            EMPTY_SCAN_NANOS.get() / emptyCount / 1_000L);
-                }
-                return;
-            }
-
-            if (PENDING.size() >= MAX_PENDING_JOBS) {
-                recordFailure("Native Java ticket queue is full; dropping newest snapshot", null);
-                return;
-            }
-
-            byte[] expected = null;
-            if (DEBUG_MODE) {
-                ByteBuffer syncOutput = DEBUG_OUTPUT_BUFFER.get();
-                syncOutput.clear();
-                int syncVertices = Native.meshSection(input, syncOutput);
-                if (syncVertices < 0) {
-                    recordFailure("Synchronous Rust debug mesh failed with " + syncVertices, null);
-                } else {
-                    int syncBytes = Math.multiplyExact(syncVertices, Native.MESH_VERTEX_STRIDE);
-                    expected = new byte[syncBytes];
-                    syncOutput.position(0);
-                    syncOutput.limit(syncBytes);
-                    syncOutput.get(expected);
-                }
-            }
-
-            long ticket = Native.submitSection(input, key, generation);
-            if (ticket <= 0L) {
-                recordFailure("Rust rejected async section job with " + ticket, null);
-                return;
-            }
-            PendingJob job = new PendingJob(
-                    ticket, key, generation, System.nanoTime(), snapshotNanos, expected, vanillaFaces);
-            PENDING.put(ticket, job);
-            SNAPSHOT_NANOS.addAndGet(snapshotNanos);
-        } catch (RuntimeException | LinkageError failure) {
-            recordFailure("Native section snapshot/submission failed; preserving vanilla result", failure);
+        NativeSectionCapture.CapturedSection captured =
+                NativeSectionCapture.captureTakeover(compiler, sectionPos, region, mergeEnabled());
+        if (captured != null) {
+            DEBUG_CAPTURE.set(captured);
         }
     }
 
-    /** Called on the client/render thread. It is the only path that consumes finished jobs. */
+    private static void submitSnapshot(
+            long sectionKey,
+            long generation,
+            NativeSectionCapture.CapturedSection captured,
+            boolean takeover) {
+        if (PENDING.size() >= MAX_PENDING_JOBS) {
+            recordFailure("Native ticket queue is full; dropping snapshot", null);
+            if (takeover) {
+                NativeSectionOwnership.markFailed(sectionKey, "ticket queue full");
+            }
+            return;
+        }
+        if (!NativeSectionOwnership.beginJob(sectionKey, generation)) {
+            return;
+        }
+        // Cancel superseded jobs for this section.
+        for (Map.Entry<Long, PendingJob> entry : new ArrayList<>(PENDING.entrySet())) {
+            PendingJob job = entry.getValue();
+            if (job.sectionKey == sectionKey && PENDING.remove(entry.getKey(), job)) {
+                safelyRelease(entry.getKey());
+                NativeSectionOwnership.noteStaleResult();
+            }
+        }
+        long ticket;
+        try {
+            ByteBuffer snapshot = captured.snapshot();
+            ticket = Native.submitSectionV2(snapshot, sectionKey, generation);
+        } catch (RuntimeException | LinkageError failure) {
+            recordFailure("Submitting WOM2 snapshot failed", failure);
+            NativeSectionOwnership.markFailed(sectionKey, "snapshot submission failed");
+            return;
+        }
+        if (ticket <= 0L) {
+            recordFailure("Rust rejected WOM2 job with " + ticket, null);
+            NativeSectionOwnership.markFailed(sectionKey, "Rust rejected the job: " + ticket);
+            return;
+        }
+        NativeSectionOwnership.setPendingTicket(sectionKey, ticket, generation);
+        PENDING.put(ticket, new PendingJob(ticket, sectionKey, generation, System.nanoTime(), takeover));
+        SUBMITTED_JOBS.incrementAndGet();
+    }
+
+    // ------------------------------------------------------------------
+    // Render-thread poll
+    // ------------------------------------------------------------------
+
+    /** Render thread: polls finished jobs, stages uploads, flips ownership. */
     public static void pollCompleted() {
         if (!ENABLED || !NativeLoader.isLoaded() || PENDING.isEmpty()) {
             return;
         }
-
         ByteBuffer output = OUTPUT_BUFFER.get();
+        List<CompletedMesh> completed = null;
         for (Map.Entry<Long, PendingJob> entry : new ArrayList<>(PENDING.entrySet())) {
             long ticket = entry.getKey();
             PendingJob job = entry.getValue();
             int status;
-            long pollStart = System.nanoTime();
             try {
                 output.clear();
                 status = Native.pollCompleted(ticket, output);
             } catch (RuntimeException | LinkageError failure) {
                 recordFailure("Polling native ticket failed", failure);
                 finishTicket(ticket, job);
+                NativeSectionOwnership.markFailed(job.sectionKey, "poll failed");
                 continue;
             }
             if (status == 0) {
                 continue;
             }
-            long nativeQueueNanos = System.nanoTime() - job.submittedNanos;
             if (status < 0) {
                 recordFailure("Native ticket " + ticket + " failed with " + status, null);
                 finishTicket(ticket, job);
+                NativeSectionOwnership.markFailed(job.sectionKey, "native job failed: " + status);
                 continue;
             }
-
-            int vertexCount = status - 1;
-            long byteCountLong = (long) vertexCount * Native.MESH_VERTEX_STRIDE;
-            if (byteCountLong > output.capacity()) {
-                recordFailure("Native ticket returned impossible vertex count " + vertexCount, null);
+            int totalBytes = status - 1;
+            if (totalBytes <= 0 || totalBytes > output.capacity()) {
+                recordFailure("Native ticket returned impossible byte count " + totalBytes, null);
+                finishTicket(ticket, job);
+                NativeSectionOwnership.markFailed(job.sectionKey, "impossible result size");
+                continue;
+            }
+            if (!NativeSectionOwnership.isLatestGeneration(job.sectionKey, job.generation)) {
+                NativeSectionOwnership.noteStaleResult();
                 finishTicket(ticket, job);
                 continue;
             }
-
-            int byteCount = (int) byteCountLong;
-            long copyStart = System.nanoTime();
-            if (isLatestGeneration(job.sectionKey, job.generation)) {
-                byte[] vertices = new byte[byteCount];
-                output.position(0);
-                output.limit(byteCount);
-                output.get(vertices);
-                NativeSectionMeshCache.put(job.sectionKey, vertices);
-                compareDebug(job, vertices);
-                NativeMeshDifferential.compare(job.sectionKey, job.vanillaFaces, vertices);
-                long sectionCount = COMPILED_SECTIONS.incrementAndGet();
-                long totalVertices = OUTPUT_VERTICES.addAndGet(vertexCount);
-                NATIVE_NANOS.addAndGet(nativeQueueNanos);
-                COPY_CACHE_NANOS.addAndGet(System.nanoTime() - copyStart);
-                boolean firstNonEmptySection = vertexCount > 0 && totalVertices == vertexCount;
-                if (sectionCount == 1L || firstNonEmptySection || (sectionCount & 255L) == 0L) {
-                    LOGGER.info(
-                            "Rust async mesher: callbacks {} (selected {}, complete {}, skipped {} at 1/{}) | pending {} | {} cumulative vertices (last {}) | stale {} | failures {} | avg snapshot/queue+native/copy+cache {} / {} / {} us | cache {} sections / {} MiB",
-                            SECTION_CALLBACKS.get(),
-                            SAMPLED_SECTIONS.get(),
-                            sectionCount,
-                            SAMPLED_OUT_SECTIONS.get(),
-                            (FORCE_FULL_CAPTURE || DEBUG_MODE) ? 1 : SAMPLE_RATE,
-                            PENDING.size(),
-                            totalVertices,
-                            vertexCount,
-                            STALE_RESULTS.get(),
-                            FAILED_SECTIONS.get(),
-                            SNAPSHOT_NANOS.get() / Math.max(1L, SAMPLED_SECTIONS.get()) / 1_000L,
-                            NATIVE_NANOS.get() / Math.max(1L, sectionCount) / 1_000L,
-                            COPY_CACHE_NANOS.get() / Math.max(1L, sectionCount) / 1_000L,
-                            NativeSectionMeshCache.sectionCount(),
-                            NativeSectionMeshCache.cachedBytes() / (1024L * 1024L));
-                }
-            } else {
-                STALE_RESULTS.incrementAndGet();
+            ParsedMesh mesh;
+            try {
+                mesh = parseOutput(output, totalBytes);
+            } catch (RuntimeException failure) {
+                recordFailure("Native WOM2 output failed validation", failure);
+                finishTicket(ticket, job);
+                NativeSectionOwnership.markFailed(job.sectionKey, "output validation failed");
+                continue;
             }
+            if (completed == null) {
+                completed = new ArrayList<>();
+            }
+            completed.add(new CompletedMesh(job, mesh));
             finishTicket(ticket, job);
-            long elapsed = System.nanoTime() - pollStart;
-            if (elapsed > 10_000_000L) {
-                LOGGER.debug("Native ticket {} completion handling took {} us", ticket, elapsed / 1_000L);
-            }
         }
-    }
 
-    private static void compareDebug(PendingJob job, byte[] actual) {
-        if (job.expectedBytes == null) {
+        if (completed == null || completed.isEmpty()) {
             return;
         }
-        int difference = firstDifference(job.expectedBytes, actual);
-        if (difference >= 0) {
-            int expectedState = stateIdAt(job.expectedBytes, difference);
-            int actualState = stateIdAt(actual, difference);
-            LOGGER.warn(
-                    "Rust sync/async output mismatch at section ({}, {}, {}) generation {} byte {}; first packed state id {} vs {}",
-                    unpackSectionX(job.sectionKey), unpackSectionY(job.sectionKey), unpackSectionZ(job.sectionKey),
-                    job.generation, difference, expectedState, actualState);
-        }
-    }
 
-    private static int firstDifference(byte[] a, byte[] b) {
-        int count = Math.min(a.length, b.length);
-        for (int i = 0; i < count; i++) {
-            if (a[i] != b[i]) {
-                return i;
+        // Stage all uploads, flush once, then flip ownership.
+        NativeTerrainStore store = NativeTerrainStore.get();
+        for (CompletedMesh mesh : completed) {
+            for (int slot = 0; slot < Native.WOM2_LAYER_COUNT; slot++) {
+                ChunkSectionLayer layer = layerOf(slot);
+                byte[] passthrough = mesh.mesh.passthrough(slot);
+                byte[] merged = mesh.mesh.merged(slot);
+                if (passthrough.length == 0 && merged.length == 0) {
+                    store.remove(mesh.job.sectionKey, layer);
+                } else {
+                    store.stageUpload(mesh.job.sectionKey, layer, passthrough, merged);
+                }
             }
         }
-        return a.length == b.length ? -1 : count;
-    }
-
-    private static int unpackSectionX(long packed) {
-        return (int) (packed >> 38);
-    }
-
-    private static int unpackSectionY(long packed) {
-        return (int) (packed << 52 >> 52);
-    }
-
-    private static int unpackSectionZ(long packed) {
-        return (int) (packed << 26 >> 38);
-    }
-
-    private static int stateIdAt(byte[] bytes, int difference) {
-        if (bytes.length < Native.MESH_VERTEX_STRIDE) {
-            return -1;
+        store.flushUploads();
+        for (CompletedMesh mesh : completed) {
+            int layerMask = mesh.mesh.layerMask();
+            NativeSectionOwnership.activate(mesh.job.sectionKey, layerMask);
+            COMPLETED_JOBS.incrementAndGet();
+            NATIVE_NANOS.addAndGet(System.nanoTime() - mesh.job.submittedNanos);
         }
-        int offset = (difference / Native.MESH_VERTEX_STRIDE) * Native.MESH_VERTEX_STRIDE + 4;
-        if (offset + 4 > bytes.length) {
-            return -1;
+        NativeSectionOwnership.applyQueuedRecompiles();
+        NativeSectionOwnership.enforceCap();
+    }
+
+    private static ChunkSectionLayer layerOf(int slot) {
+        return switch (slot) {
+            case Native.LAYER_SOLID -> ChunkSectionLayer.SOLID;
+            case Native.LAYER_CUTOUT -> ChunkSectionLayer.CUTOUT;
+            default -> ChunkSectionLayer.TRANSLUCENT;
+        };
+    }
+
+    private static ParsedMesh parseOutput(ByteBuffer output, int totalBytes) {
+        if (output.getInt(0) != WOM2_MAGIC) {
+            throw new IllegalStateException("bad WOM2 output magic");
         }
-        return ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.nativeOrder()).getInt();
-    }
-
-    private static boolean isLatestGeneration(long key, long generation) {
-        Long current = LATEST_GENERATION.get(key);
-        return current != null && current.longValue() == generation;
-    }
-
-    private static void cancelSupersededJobs(long sectionKey) {
-        for (Map.Entry<Long, PendingJob> entry : new ArrayList<>(PENDING.entrySet())) {
-            PendingJob job = entry.getValue();
-            if (job.sectionKey == sectionKey && PENDING.remove(entry.getKey(), job)) {
-                safelyRelease(entry.getKey());
-                STALE_RESULTS.incrementAndGet();
+        if (output.getShort(4) != (short) WOM2_VERSION) {
+            throw new IllegalStateException("bad WOM2 output version");
+        }
+        int layerCount = output.getShort(8) & 0xFFFF;
+        if (layerCount != Native.WOM2_LAYER_COUNT) {
+            throw new IllegalStateException("bad WOM2 layer count " + layerCount);
+        }
+        int tableOffset = output.getInt(12);
+        if (output.getInt(16) != totalBytes || tableOffset != Native.WOM2_OUTPUT_HEADER_BYTES) {
+            throw new IllegalStateException("bad WOM2 output header");
+        }
+        byte[][] passthrough = new byte[Native.WOM2_LAYER_COUNT][];
+        byte[][] merged = new byte[Native.WOM2_LAYER_COUNT][];
+        int layerMask = 0;
+        for (int slot = 0; slot < Native.WOM2_LAYER_COUNT; slot++) {
+            int entry = tableOffset + slot * Native.WOM2_OUTPUT_LAYER_TABLE_BYTES;
+            if ((output.get(entry) & 0xFF) != Native.LAYER_IDS[slot]) {
+                throw new IllegalStateException("bad WOM2 layer id at slot " + slot);
+            }
+            int passthroughQuads = output.getInt(entry + 4);
+            int passthroughBytes = output.getInt(entry + 8);
+            int passthroughOffset = output.getInt(entry + 12);
+            int mergedQuads = output.getInt(entry + 16);
+            int mergedBytes = output.getInt(entry + 20);
+            if (passthroughBytes != passthroughQuads * 4 * Native.BLOCK_VERTEX_STRIDE
+                    || mergedBytes != mergedQuads * 4 * Native.TILED_VERTEX_STRIDE) {
+                throw new IllegalStateException("bad WOM2 layer byte counts at slot " + slot);
+            }
+            if (passthroughOffset < 0
+                    || passthroughOffset + passthroughBytes + mergedBytes > totalBytes) {
+                throw new IllegalStateException("bad WOM2 layer offsets at slot " + slot);
+            }
+            if (passthroughBytes > 0) {
+                passthrough[slot] = new byte[passthroughBytes];
+                readBytes(output, passthroughOffset, passthrough[slot]);
+            } else {
+                passthrough[slot] = new byte[0];
+            }
+            if (mergedBytes > 0) {
+                merged[slot] = new byte[mergedBytes];
+                readBytes(output, passthroughOffset + passthroughBytes, merged[slot]);
+            } else {
+                merged[slot] = new byte[0];
+            }
+            if (passthroughQuads + mergedQuads > 0) {
+                layerMask |= 1 << slot;
             }
         }
+        return new ParsedMesh(passthrough, merged, layerMask);
+    }
+
+    private static void readBytes(ByteBuffer buffer, int offset, byte[] target) {
+        ByteBuffer slice = buffer.duplicate();
+        slice.position(offset);
+        slice.limit(offset + target.length);
+        slice.get(target);
     }
 
     private static void finishTicket(long ticket, PendingJob job) {
@@ -421,185 +433,59 @@ public final class NativeSectionMesher {
         }
     }
 
-    private static final ThreadLocal<ByteBuffer> DEBUG_OUTPUT_BUFFER = ThreadLocal.withInitial(
-            () -> ByteBuffer.allocateDirect(MAX_OUTPUT_BYTES).order(ByteOrder.nativeOrder()));
+    // ------------------------------------------------------------------
+    // Timing + telemetry
+    // ------------------------------------------------------------------
 
-    private record PendingJob(
-            long ticket,
-            long sectionKey,
-            long generation,
-            long submittedNanos,
-            long snapshotNanos,
-            byte[] expectedBytes,
-            int[] vanillaFaces) {
+    public static void beginVanillaCompileTiming() {
+        VANILLA_COMPILE_START.set(System.nanoTime());
     }
 
-    private static ByteBuffer snapshot(SectionPos sectionPos, RenderSectionRegion region) {
-        BlockPos origin = sectionPos.origin();
-        int minX = origin.getX();
-        int minY = origin.getY();
-        int minZ = origin.getZ();
-
-        SnapshotWorkspace workspace = SNAPSHOT_WORKSPACE.get();
-        HashMap<BlockState, Integer> paletteLookup = workspace.paletteLookup;
-        paletteLookup.clear();
-        workspace.paletteCount = 0;
-        short[] cellPalette = workspace.cellPalette;
-        byte[] sky = workspace.sky;
-        byte[] block = workspace.block;
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-
-        // Scan the 4096 interior cells first. Empty/non-meshable sections can
-        // return before we touch the 1736 neighbor-border cells or query light.
-        int openFaces = 0;
-        boolean hasMeshableInterior = false;
-        for (int z = 1; z <= 16; z++) {
-            for (int y = 1; y <= 16; y++) {
-                for (int x = 1; x <= 16; x++) {
-                    pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
-                    BlockState state = region.getBlockState(pos);
-                    int paletteIndex = paletteIndexFor(state, pos, region, workspace);
-                    int cell = cellIndex(x, y, z);
-                    cellPalette[cell] = (short) paletteIndex;
-                    int cellFlags = workspace.paletteFlags[paletteIndex] & 0xff;
-
-                    if ((cellFlags & FLAG_OCCLUDES) == 0) {
-                        if (x == 1) openFaces |= 1 << 0;
-                        if (x == 16) openFaces |= 1 << 1;
-                        if (y == 1) openFaces |= 1 << 2;
-                        if (y == 16) openFaces |= 1 << 3;
-                        if (z == 1) openFaces |= 1 << 4;
-                        if (z == 16) openFaces |= 1 << 5;
-                    }
-                    if ((cellFlags & FLAG_MESHABLE) != 0) {
-                        hasMeshableInterior = true;
-                    }
-                }
-            }
+    public static void endVanillaCompileTiming() {
+        Long started = VANILLA_COMPILE_START.get();
+        VANILLA_COMPILE_START.remove();
+        if (started != null) {
+            VANILLA_COMPILE_NANOS.addAndGet(System.nanoTime() - started);
+            VANILLA_COMPILE_COUNT.incrementAndGet();
         }
-
-        workspace.openFaces = openFaces;
-        if (!hasMeshableInterior) {
-            return null;
-        }
-
-        // Fill only the border cells now that we know a native mesh is possible.
-        for (int z = 0; z < GRID; z++) {
-            for (int y = 0; y < GRID; y++) {
-                for (int x = 0; x < GRID; x++) {
-                    if (x > 0 && x < 17 && y > 0 && y < 17 && z > 0 && z < 17) {
-                        continue;
-                    }
-                    pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
-                    BlockState state = region.getBlockState(pos);
-                    int paletteIndex = paletteIndexFor(state, pos, region, workspace);
-                    cellPalette[cellIndex(x, y, z)] = (short) paletteIndex;
-                }
-            }
-        }
-
-        LevelLightEngine lightEngine = region.getLightEngine();
-        LayerLightEventListener skyLight = lightEngine.getLayerListener(LightLayer.SKY);
-        LayerLightEventListener blockLight = lightEngine.getLayerListener(LightLayer.BLOCK);
-        int cell = 0;
-        for (int z = 0; z < GRID; z++) {
-            for (int y = 0; y < GRID; y++) {
-                for (int x = 0; x < GRID; x++) {
-                    pos.set(minX + x - 1, minY + y - 1, minZ + z - 1);
-                    sky[cell] = (byte) clampLight(skyLight.getLightValue(pos));
-                    block[cell] = (byte) clampLight(blockLight.getLightValue(pos));
-                    cell++;
-                }
-            }
-        }
-
-        int paletteCount = workspace.paletteCount;
-        int paletteOffset = HEADER_BYTES;
-        int cellsOffset = paletteOffset + paletteCount * PALETTE_ENTRY_BYTES;
-        int totalBytes = cellsOffset + CELL_COUNT * CELL_ENTRY_BYTES;
-        ByteBuffer input = INPUT_BUFFER.get();
-        if (totalBytes > input.capacity()) {
-            throw new IllegalStateException("Section snapshot exceeded reusable direct-buffer capacity");
-        }
-        input.clear();
-
-        input.putInt(0, MAGIC);
-        input.putShort(4, (short) VERSION);
-        input.putShort(6, (short) HEADER_BYTES);
-        input.putShort(8, (short) GRID);
-        input.putShort(10, (short) GRID);
-        input.putShort(12, (short) GRID);
-        input.putShort(14, (short) paletteCount);
-        input.putInt(16, CELL_COUNT);
-        input.putShort(20, (short) PALETTE_ENTRY_BYTES);
-        input.putShort(22, (short) CELL_ENTRY_BYTES);
-        input.putInt(24, paletteOffset);
-        input.putInt(28, cellsOffset);
-        input.putInt(32, totalBytes);
-        input.putInt(36, 0);
-
-        input.position(paletteOffset);
-        for (int i = 0; i < paletteCount; i++) {
-            input.putInt(workspace.paletteStateIds[i]);
-            input.put(workspace.paletteFlags[i]);
-            input.put((byte) 0x3f);
-            input.putShort((short) 0);
-        }
-
-        input.position(cellsOffset);
-        for (int i = 0; i < CELL_COUNT; i++) {
-            input.putShort(cellPalette[i]);
-            input.put(sky[i]);
-            input.put(block[i]);
-        }
-
-        input.position(0);
-        input.limit(totalBytes);
-        return input;
     }
 
-    private static int paletteIndexFor(
-            BlockState state,
-            BlockPos pos,
-            RenderSectionRegion region,
-            SnapshotWorkspace workspace) {
-        Integer existing = workspace.paletteLookup.get(state);
-        if (existing != null) {
-            return existing;
-        }
-
-        int paletteIndex = workspace.paletteCount;
-        if (paletteIndex >= CELL_COUNT || paletteIndex > Short.MAX_VALUE) {
-            throw new IllegalStateException("Section palette exceeded ABI limits");
-        }
-        int stateId = Block.getId(state);
-        boolean occludes = state.isSolidRender();
-        boolean fullCube = occludes && Block.isShapeFullBlock(state.getShape(region, pos));
-        boolean meshable = fullCube
-                && state.getRenderShape() == RenderShape.MODEL
-                && state.getFluidState().isEmpty()
-                && !state.hasBlockEntity();
-        int flags = (meshable ? FLAG_MESHABLE : 0) | (occludes ? FLAG_OCCLUDES : 0);
-
-        workspace.paletteLookup.put(state, paletteIndex);
-        workspace.paletteStateIds[paletteIndex] = stateId;
-        workspace.paletteFlags[paletteIndex] = (byte) flags;
-        workspace.paletteCount++;
-        return paletteIndex;
+    public static long averageCaptureMicros() {
+        return CAPTURE_NANOS.get() / Math.max(1L, CAPTURE_COUNT.get()) / 1_000L;
     }
 
-    private static int cellIndex(int x, int y, int z) {
-        return x + GRID * (y + GRID * z);
+    public static long averageNativeMicros() {
+        return NATIVE_NANOS.get() / Math.max(1L, COMPLETED_JOBS.get()) / 1_000L;
     }
 
-    private static int clampLight(int value) {
-        return Math.max(0, Math.min(15, value));
+    public static long averageVanillaCompileMicros() {
+        return VANILLA_COMPILE_NANOS.get() / Math.max(1L, VANILLA_COMPILE_COUNT.get()) / 1_000L;
+    }
+
+    public static long callbacks() {
+        return SECTION_CALLBACKS.get();
+    }
+
+    public static long submittedJobs() {
+        return SUBMITTED_JOBS.get();
+    }
+
+    public static long completedJobs() {
+        return COMPLETED_JOBS.get();
+    }
+
+    public static int pendingJobs() {
+        return PENDING.size();
+    }
+
+    public static long failures() {
+        return FAILED_SECTIONS.get();
     }
 
     private static void recordFailure(String message, Throwable failure) {
         long count = FAILED_SECTIONS.incrementAndGet();
         long previous = LAST_FAILURE_LOG.get();
-        if (count == 1 || count - previous >= 256) {
+        if (count == 1L || count - previous >= 256L) {
             LAST_FAILURE_LOG.set(count);
             if (failure == null) {
                 LOGGER.warn("{} ({} failures so far)", message, count);
@@ -609,14 +495,28 @@ public final class NativeSectionMesher {
         }
     }
 
-    private static final class SnapshotWorkspace {
-        private final HashMap<BlockState, Integer> paletteLookup = new HashMap<>(256);
-        private final short[] cellPalette = new short[CELL_COUNT];
-        private final byte[] sky = new byte[CELL_COUNT];
-        private final byte[] block = new byte[CELL_COUNT];
-        private final int[] paletteStateIds = new int[CELL_COUNT];
-        private final byte[] paletteFlags = new byte[CELL_COUNT];
-        private int openFaces;
-        private int paletteCount;
+    private record PendingJob(
+            long ticket,
+            long sectionKey,
+            long generation,
+            long submittedNanos,
+            boolean takeover) {
+    }
+
+    private record CompletedMesh(PendingJob job, ParsedMesh mesh) {
+    }
+
+    private record ParsedMesh(byte[][] passthrough, byte[][] merged, int layerMask) {
+        byte[] passthrough(int slot) {
+            return passthrough[slot];
+        }
+
+        byte[] merged(int slot) {
+            return merged[slot];
+        }
+
+        int layerMask() {
+            return layerMask;
+        }
     }
 }

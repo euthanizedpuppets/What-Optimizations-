@@ -8,6 +8,9 @@ name: Export Minecraft 26.2 Sources
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mc-sources.yml'
 
 permissions:
   contents: write

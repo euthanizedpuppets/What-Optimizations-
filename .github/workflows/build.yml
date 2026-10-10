@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, 'phase1/**']
+    branches: [main, 'phase1/**', 'arena/**']
   pull_request:
   workflow_dispatch:
 

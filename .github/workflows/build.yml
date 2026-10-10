@@ -34,13 +34,13 @@ jobs:
             exit 1
           fi
           nm -D --defined-only "$library" | awk '{print $3}' > /tmp/what-optimizations-jni-symbols.txt
-          for symbol in \\
-            Java_dev_euthanized_whatoptimizations_Native_hello0 \\
-            Java_dev_euthanized_whatoptimizations_Native_meshSection0 \\
-            Java_dev_euthanized_whatoptimizations_Native_submitSection0 \\
-            Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0 \\
-            Java_dev_euthanized_whatoptimizations_Native_pollCompleted0 \\
-            Java_dev_euthanized_whatoptimizations_Native_release0 \\
+          for symbol in \
+            Java_dev_euthanized_whatoptimizations_Native_hello0 \
+            Java_dev_euthanized_whatoptimizations_Native_meshSection0 \
+            Java_dev_euthanized_whatoptimizations_Native_submitSection0 \
+            Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0 \
+            Java_dev_euthanized_whatoptimizations_Native_pollCompleted0 \
+            Java_dev_euthanized_whatoptimizations_Native_release0 \
             Java_dev_euthanized_whatoptimizations_Native_visibleSections0
           do
             if ! grep -Fxq "$symbol" /tmp/what-optimizations-jni-symbols.txt; then

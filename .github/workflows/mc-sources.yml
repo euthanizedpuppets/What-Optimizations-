@@ -62,6 +62,42 @@ jobs:
           print(f"extracted {extracted} source files")
           if extracted < 5000:
               raise SystemExit("Expected the full Minecraft sources jar; extraction looks incomplete")
+
+          # Also export the core shader assets (GLSL + JSON) from the actual
+          # Minecraft client jar so the native pass can mirror vanilla's
+          # chunk shaders exactly.
+          import zipfile
+          shader_count = 0
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob("*.jar"):
+                  if "sources" in path.name.lower() or "linemapped" not in path.name.lower():
+                      continue
+                  try:
+                      with ZipFile(path) as archive:
+                          names = archive.namelist()
+                          if "assets/minecraft/shaders/core/rendertype_solid.json" not in names:
+                              continue
+                          for name in names:
+                              if name.startswith("assets/minecraft/shaders/core/") and (
+                                  name.endswith(".json") or name.endswith(".vsh") or name.endswith(".fsh")
+                              ):
+                                  target = out / name
+                                  target.parent.mkdir(parents=True, exist_ok=True)
+                                  target.write_bytes(archive.read(name))
+                                  shader_count += 1
+                          for name in names:
+                              if name.startswith("assets/minecraft/shaders/include/") and (
+                                  name.endswith(".json") or name.endswith(".vsh") or name.endswith(".fsh") or name.endswith(".glsl")
+                              ):
+                                  target = out / name
+                                  target.parent.mkdir(parents=True, exist_ok=True)
+                                  target.write_bytes(archive.read(name))
+                                  shader_count += 1
+                  except (BadZipFile, OSError):
+                      pass
+          print(f"extracted {shader_count} shader asset files")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

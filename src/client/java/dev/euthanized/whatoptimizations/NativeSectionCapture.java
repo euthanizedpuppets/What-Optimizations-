@@ -107,7 +107,7 @@ final class NativeSectionCapture {
             blockColors = access.whatOptimizations$getBlockColors();
             ambientOcclusion = access.whatOptimizations$getAmbientOcclusion();
             cutoutLeaves = access.whatOptimizations$getCutoutLeaves();
-        } catch (RuntimeException | ClassCastException failure) {
+        } catch (RuntimeException failure) {
             LOGGER.debug("Could not read SectionCompiler settings", failure);
             return null;
         }

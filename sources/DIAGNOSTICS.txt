@@ -1,0 +1,6 @@
+marker jars:
+/home/runner/.gradle/caches/fabric-loom/26.2/minecraft-client-only.jar: ['assets/minecraft/shaders/core/terrain.vsh']
+/home/runner/.gradle/caches/fabric-loom/26.2/minecraft-client.jar: ['assets/minecraft/shaders/core/terrain.vsh']
+/home/runner/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-clientonly-deobf/26.2/minecraft-clientonly-deobf-26.2.jar: ['assets/minecraft/shaders/core/terrain.vsh']
+errors:
+

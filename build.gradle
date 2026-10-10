@@ -26,16 +26,9 @@ dependencies {
     testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
 }
 
-// With splitEnvironmentSourceSets the mod's classes live in the client
-// source set, so the test source set needs its output and classpath (which
-// carries the client Minecraft jar and libraries).
-sourceSets {
-    test {
-        compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
-        runtimeClasspath += sourceSets.client.output + sourceSets.client.runtimeClasspath
-    }
-}
-
+// Loom already wires the test source set to the client source set when
+// splitEnvironmentSourceSets() is used (test classpath extends the client
+// classpath and sees the client output).
 test {
     useJUnitPlatform()
 }

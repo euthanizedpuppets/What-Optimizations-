@@ -158,6 +158,24 @@ fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_ne_bytes([s[0], s[1], s[2], s[3]]))
 }
 
+fn write_u8(data: &mut [u8], offset: usize, value: u8) {
+    if let Some(slot) = data.get_mut(offset) {
+        *slot = value;
+    }
+}
+
+fn write_u16(data: &mut [u8], offset: usize, value: u16) {
+    if let Some(s) = data.get_mut(offset..offset + 2) {
+        s.copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn write_u32(data: &mut [u8], offset: usize, value: u32) {
+    if let Some(s) = data.get_mut(offset..offset + 4) {
+        s.copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
 fn grid_index(x: usize, y: usize, z: usize) -> usize {
     x + GRID * (y + GRID * z)
 }
@@ -615,7 +633,7 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_meshSection0
 }
 
 mod async_jobs;
-mod native_gl;
+mod mesh_v2;
 
 #[cfg(test)]
 mod tests {

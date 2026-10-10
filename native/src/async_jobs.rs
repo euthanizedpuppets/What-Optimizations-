@@ -103,6 +103,81 @@ fn run_owned_snapshot(snapshot: Vec<u8>) -> Result<(usize, Vec<u8>), jint> {
     Ok((vertex_count, scratch))
 }
 
+/// WOM2 snapshot: the result's first tuple element is the total output byte
+/// count (Java reads the self-describing layer table from the bytes).
+fn run_owned_snapshot_v2(snapshot: Vec<u8>) -> Result<(usize, Vec<u8>), jint> {
+    let output = crate::mesh_v2::mesh_section_v2(&snapshot)?;
+    let total = output.len();
+    Ok((total, output))
+}
+
+fn submit_snapshot(
+    env: &JNIEnv,
+    input: &JByteBuffer,
+    section_key: i64,
+    generation: i64,
+    version: u16,
+) -> Result<jlong, jint> {
+    let min_header = if version == 2 {
+        crate::mesh_v2::V2_HEADER_BYTES
+    } else {
+        HEADER_BYTES
+    };
+    let capacity = match env.get_direct_buffer_capacity(input) {
+        Ok(value) if value >= min_header => value,
+        _ => return Err(ERR_DIRECT_BUFFER),
+    };
+    let ptr = match env.get_direct_buffer_address(input) {
+        Ok(ptr) if !ptr.is_null() => ptr as *const u8,
+        _ => return Err(ERR_DIRECT_BUFFER),
+    };
+
+    // Copy before returning; Java immediately reuses the thread-local buffer.
+    let live = unsafe { slice::from_raw_parts(ptr, capacity) };
+    let total = match input_length(live) {
+        Ok(value) => value,
+        Err(code) => return Err(code),
+    };
+    if total > capacity {
+        return Err(ERR_BAD_HEADER);
+    }
+    let owned = live[..total].to_vec();
+
+    let mut registry = match jobs().lock() {
+        Ok(guard) => guard,
+        Err(poison) => poison.into_inner(),
+    };
+    if registry.len() >= MAX_NATIVE_JOBS {
+        return Err(ERR_QUEUE_FULL);
+    }
+
+    let raw_ticket = NEXT_TICKET.fetch_add(1, Ordering::Relaxed);
+    if raw_ticket == 0 || raw_ticket > i64::MAX as u64 {
+        return Err(ERR_QUEUE_FULL);
+    }
+    let cell = Arc::new(JobCell {
+        _section_key: section_key,
+        _generation: generation,
+        cancelled: AtomicBool::new(false),
+        state: Mutex::new(JobState::Pending),
+    });
+    registry.insert(raw_ticket, Arc::clone(&cell));
+    drop(registry);
+
+    super::pool().spawn(move || {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            if version == 2 {
+                run_owned_snapshot_v2(owned)
+            } else {
+                run_owned_snapshot(owned)
+            }
+        }))
+        .unwrap_or(Err(ERR_PANIC));
+        finish_job(&cell, result);
+    });
+    Ok(raw_ticket as jlong)
+}
+
 #[no_mangle]
 pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSection0(
     env: JNIEnv,
@@ -112,50 +187,30 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSectio
     generation: jlong,
 ) -> jlong {
     catch_unwind(AssertUnwindSafe(|| {
-        let capacity = match env.get_direct_buffer_capacity(&input) {
-            Ok(value) if value >= HEADER_BYTES => value,
-            _ => return ERR_DIRECT_BUFFER as jlong,
-        };
-        let ptr = match env.get_direct_buffer_address(&input) {
-            Ok(ptr) if !ptr.is_null() => ptr as *const u8,
-            _ => return ERR_DIRECT_BUFFER as jlong,
-        };
-
-        // Copy before returning; Java immediately reuses the thread-local buffer.
-        let live = unsafe { slice::from_raw_parts(ptr, capacity) };
-        let total = match input_length(live) {
-            Ok(value) => value,
-            Err(code) => return code as jlong,
-        };
-        let owned = live[..total].to_vec();
-
-        let mut registry = match jobs().lock() {
-            Ok(guard) => guard,
-            Err(poison) => poison.into_inner(),
-        };
-        if registry.len() >= MAX_NATIVE_JOBS {
-            return ERR_QUEUE_FULL as jlong;
+        match submit_snapshot(&env, &input, section_key, generation, 1) {
+            Ok(ticket) => ticket,
+            Err(code) => code as jlong,
         }
+    }))
+    .unwrap_or(ERR_PANIC as jlong)
+}
 
-        let raw_ticket = NEXT_TICKET.fetch_add(1, Ordering::Relaxed);
-        if raw_ticket == 0 || raw_ticket > i64::MAX as u64 {
-            return ERR_QUEUE_FULL as jlong;
+/// WOM2 submission: the input is a captured vanilla vertex stream (see
+/// docs/NATIVE_TERRAIN_PIPELINE.md). Returns a ticket handle or a negative
+/// error code.
+#[no_mangle]
+pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0(
+    env: JNIEnv,
+    _class: JClass,
+    input: JByteBuffer,
+    section_key: jlong,
+    generation: jlong,
+) -> jlong {
+    catch_unwind(AssertUnwindSafe(|| {
+        match submit_snapshot(&env, &input, section_key, generation, 2) {
+            Ok(ticket) => ticket,
+            Err(code) => code as jlong,
         }
-        let cell = Arc::new(JobCell {
-            _section_key: section_key,
-            _generation: generation,
-            cancelled: AtomicBool::new(false),
-            state: Mutex::new(JobState::Pending),
-        });
-        registry.insert(raw_ticket, Arc::clone(&cell));
-        drop(registry);
-
-        super::pool().spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| run_owned_snapshot(owned)))
-                .unwrap_or(Err(ERR_PANIC));
-            finish_job(&cell, result);
-        });
-        raw_ticket as jlong
     }))
     .unwrap_or(ERR_PANIC as jlong)
 }

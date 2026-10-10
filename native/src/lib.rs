@@ -635,7 +635,6 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_meshSection0
 mod async_jobs;
 mod mesh_v2;
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

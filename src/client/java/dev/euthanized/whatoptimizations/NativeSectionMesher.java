@@ -127,7 +127,8 @@ public final class NativeSectionMesher {
             return null;
         }
         long sectionKey = NativeSectionOwnership.sectionKey(sectionPos);
-        if (NativeSectionOwnership.state(sectionKey) != NativeSectionOwnership.State.ACTIVE) {
+        if (NativeSectionOwnership.isUnsupported(sectionKey)
+                || NativeSectionOwnership.state(sectionKey) != NativeSectionOwnership.State.ACTIVE) {
             return null;
         }
         long generation = GENERATION_SEQUENCE.incrementAndGet();
@@ -167,6 +168,9 @@ public final class NativeSectionMesher {
         }
         endVanillaCompileTiming();
         if (!ENABLED || !NativeLoader.isLoaded() || vanillaResults == null) {
+            return;
+        }
+        if (NativeSectionOwnership.isUnsupported(NativeSectionOwnership.sectionKey(sectionPos))) {
             return;
         }
         if (DEBUG_MODE) {
@@ -209,9 +213,25 @@ public final class NativeSectionMesher {
         }
         NativeSectionCapture.CapturedSection captured =
                 NativeSectionCapture.captureTakeover(compiler, sectionPos, region, mergeEnabled());
-        if (captured != null) {
-            DEBUG_CAPTURE.set(captured);
+        if (captured == null) {
+            return;
         }
+        // The capture lives in a thread-local direct buffer that the shadow
+        // capture at RETURN reuses; stash an independent heap copy so the
+        // comparison still sees the takeover capture's bytes.
+        ByteBuffer source = captured.snapshot();
+        ByteBuffer copy = ByteBuffer.allocate(captured.totalBytes()).order(ByteOrder.nativeOrder());
+        ByteBuffer slice = source.duplicate();
+        slice.position(0);
+        slice.limit(captured.totalBytes());
+        copy.put(slice);
+        copy.flip();
+        DEBUG_CAPTURE.set(new NativeSectionCapture.CapturedSection(
+                copy,
+                captured.totalBytes(),
+                captured.openFaces(),
+                captured.blockEntities(),
+                captured.visibilitySet()));
     }
 
     private static void submitSnapshot(

@@ -39,7 +39,7 @@ public final class NativeTerrainStore {
     private static final int HEAP_BYTES = 48 * 1024 * 1024;
     private static final int STAGING_BYTES = 32 * 1024 * 1024;
     /** lcm(28, 44) so both streams start at stride-aligned offsets. */
-    private static final int ALIGN = 308;
+    static final int ALIGN = 308;
 
     private record MeshKey(long sectionKey, int layerId) {
     }

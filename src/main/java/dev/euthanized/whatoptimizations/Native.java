@@ -7,6 +7,8 @@ import java.nio.ByteOrder;
 public final class Native {
     public static final int MESH_VERTEX_STRIDE = 16;
 
+    /** WOM2 magic: the ASCII bytes "WOM2" read as a native-endian u32. */
+    public static final int WOM2_MAGIC = 0x32_4D_4F_57;
     /** WOM2: vanilla BLOCK vertex (position 3f, color 4b ABGR, uv 2f, light 2x i16). */
     public static final int BLOCK_VERTEX_STRIDE = 28;
     /** WOM2 tiled vertex: BLOCK fields plus a per-vertex sprite rectangle (4f). */

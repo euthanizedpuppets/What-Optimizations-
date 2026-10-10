@@ -59,6 +59,10 @@ public final class NativeSectionOwnership {
         volatile long pendingTicket;
         volatile long pendingGeneration;
         volatile boolean recompileQueued;
+        /** Consecutive native failures; at the cap the section stays vanilla. */
+        volatile int failures;
+        /** Permanently unsupported: no capture, no takeover, vanilla forever. */
+        volatile boolean unsupported;
     }
 
     private static final ConcurrentHashMap<Long, Entry> ENTRIES = new ConcurrentHashMap<>();
@@ -106,6 +110,12 @@ public final class NativeSectionOwnership {
         return entry == null ? State.VANILLA : entry.state;
     }
 
+    /** True when the section must never be captured or taken over again. */
+    static boolean isUnsupported(long sectionKey) {
+        Entry entry = ENTRIES.get(sectionKey);
+        return entry != null && entry.unsupported;
+    }
+
     static boolean isActive(long sectionKey, int layerBit) {
         Entry entry = ENTRIES.get(sectionKey);
         return entry != null && entry.state == State.ACTIVE && (entry.activeLayers & layerBit) != 0;
@@ -137,14 +147,25 @@ public final class NativeSectionOwnership {
         return entry != null && entry.generation == generation;
     }
 
-    /** Render thread: a native mesh was staged and uploaded for these layers. */
+    /**
+     * Render thread: a native mesh was staged and uploaded for these layers.
+     *
+     * <p>The vanilla re-dirty is queued only when transitioning INTO ACTIVE:
+     * the recompile makes vanilla drop its mesh via a takeover compile, which
+     * must happen exactly once per ownership (and once more after a failure
+     * recovery rebuilt vanilla's mesh). Rebuilds of an already-ACTIVE section
+     * keep drawing the previous native mesh and must not recompile again —
+     * queueing unconditionally would recompile every section every frame.
+     */
     static void activate(long sectionKey, int layerMask) {
         Entry entry = entry(sectionKey);
+        boolean wasActive = entry.state == State.ACTIVE;
         entry.activeLayers = layerMask & ALL_LAYERS;
         entry.state = State.ACTIVE;
         entry.pendingTicket = 0L;
+        entry.failures = 0;
         ACTIVATIONS.incrementAndGet();
-        if (!entry.recompileQueued) {
+        if (!wasActive && !entry.recompileQueued) {
             entry.recompileQueued = true;
             RECOMPILE_QUEUE.add(sectionKey);
         }
@@ -174,7 +195,15 @@ public final class NativeSectionOwnership {
         if (entry.state != State.FAILED) {
             entry.state = State.FAILED;
             entry.pendingTicket = 0L;
+            entry.failures++;
             FAILURES.incrementAndGet();
+            if (entry.failures >= 3) {
+                // A persistently failing section must not oscillate between
+                // native and vanilla forever; leave it with vanilla.
+                entry.unsupported = true;
+                LOGGER.warn("Section {} is permanently unsupported after {} native failures; using vanilla",
+                        sectionKey, entry.failures);
+            }
             queueRecompile(sectionKey);
             long count = FAILURES.get();
             long previous = LAST_FAILURE_LOG.get();
@@ -274,6 +303,11 @@ public final class NativeSectionOwnership {
         return ENTRIES.size();
     }
 
+    /** Test-visible: number of queued vanilla recompiles. */
+    static int queuedRecompileCount() {
+        return RECOMPILE_QUEUE.size();
+    }
+
     public static int countByState(State wanted) {
         int count = 0;
         for (Entry entry : ENTRIES.values()) {
@@ -322,6 +356,7 @@ public final class NativeSectionOwnership {
                 if (mapEntry.getValue().state == State.ACTIVE) {
                     mapEntry.getValue().state = State.VANILLA;
                     mapEntry.getValue().activeLayers = 0;
+                    NativeTerrainStore.get().removeSection(mapEntry.getKey());
                     queueRecompile(mapEntry.getKey());
                 }
                 iterator.remove();

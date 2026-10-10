@@ -56,7 +56,7 @@ import org.slf4j.LoggerFactory;
 final class NativeSectionCapture {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/capture");
 
-    private static final int MAGIC = 0x32_4D_4F_57; // "WOM2" little-endian
+    private static final int MAGIC = Native.WOM2_MAGIC;
     private static final int VERSION = 2;
     private static final int HEADER_BYTES = Native.WOM2_HEADER_BYTES;
     private static final int LAYER_TABLE_BYTES = Native.WOM2_LAYER_TABLE_BYTES;

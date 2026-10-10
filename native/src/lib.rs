@@ -635,17 +635,6 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_meshSection0
 mod async_jobs;
 mod mesh_v2;
 
-// These JNI entry points live in async_jobs.rs for organization, but they must
-// be re-exported from the crate root so the cdylib exposes the exact symbols
-// looked up by the JVM. Without these exports, System.load succeeds while the
-// first asynchronous mesh submission fails with UnsatisfiedLinkError.
-pub use async_jobs::{
-    Java_dev_euthanized_whatoptimizations_Native_pollCompleted0,
-    Java_dev_euthanized_whatoptimizations_Native_release0,
-    Java_dev_euthanized_whatoptimizations_Native_submitSection0,
-    Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0,
-    Java_dev_euthanized_whatoptimizations_Native_visibleSections0,
-};
 
 #[cfg(test)]
 mod tests {

@@ -38,7 +38,7 @@ jobs:
             Java_dev_euthanized_whatoptimizations_Native_hello0 \
             Java_dev_euthanized_whatoptimizations_Native_meshSection0 \
             Java_dev_euthanized_whatoptimizations_Native_submitSection0 \
-            Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0 \
+            Java_dev_euthanized_whatoptimizations_Native_submitSectionV2Native \
             Java_dev_euthanized_whatoptimizations_Native_pollCompleted0 \
             Java_dev_euthanized_whatoptimizations_Native_release0 \
             Java_dev_euthanized_whatoptimizations_Native_visibleSections0

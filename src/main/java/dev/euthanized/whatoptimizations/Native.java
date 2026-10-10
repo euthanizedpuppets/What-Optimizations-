@@ -70,7 +70,7 @@ public final class Native {
             return -2;
         }
         NativeLoader.ensureLoaded();
-        return submitSectionV2_0(input.order(ByteOrder.nativeOrder()), sectionKey, generation);
+        return submitSectionV2Native(input.order(ByteOrder.nativeOrder()), sectionKey, generation);
     }
 
     /**
@@ -126,7 +126,7 @@ public final class Native {
 
     private static native long submitSection0(ByteBuffer input, long sectionKey, long generation);
 
-    private static native long submitSectionV2_0(ByteBuffer input, long sectionKey, long generation);
+    private static native long submitSectionV2Native(ByteBuffer input, long sectionKey, long generation);
 
     private static native int pollCompleted0(long ticket, ByteBuffer output);
 

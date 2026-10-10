@@ -199,7 +199,7 @@ pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSectio
 /// docs/NATIVE_TERRAIN_PIPELINE.md). Returns a ticket handle or a negative
 /// error code.
 #[no_mangle]
-pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0(
+pub extern "system" fn Java_dev_euthanized_whatoptimizations_Native_submitSectionV2Native(
     env: JNIEnv,
     _class: JClass,
     input: JByteBuffer,

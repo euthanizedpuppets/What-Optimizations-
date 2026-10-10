@@ -72,32 +72,32 @@ jobs:
               if not root.exists():
                   continue
               for path in root.rglob("*.jar"):
-                  if "sources" in path.name.lower() or "linemapped" not in path.name.lower():
+                  if "sources" in path.name.lower():
                       continue
                   try:
                       with ZipFile(path) as archive:
                           names = archive.namelist()
-                          if "assets/minecraft/shaders/core/rendertype_solid.json" not in names:
+                          if "assets/minecraft/shaders/core/terrain.json" not in names:
                               continue
                           for name in names:
-                              if name.startswith("assets/minecraft/shaders/core/") and (
-                                  name.endswith(".json") or name.endswith(".vsh") or name.endswith(".fsh")
+                              if not name.startswith("assets/minecraft/shaders/"):
+                                  continue
+                              if not (
+                                  name.endswith(".json")
+                                  or name.endswith(".vsh")
+                                  or name.endswith(".fsh")
+                                  or name.endswith(".glsl")
                               ):
-                                  target = out / name
-                                  target.parent.mkdir(parents=True, exist_ok=True)
-                                  target.write_bytes(archive.read(name))
-                                  shader_count += 1
-                          for name in names:
-                              if name.startswith("assets/minecraft/shaders/include/") and (
-                                  name.endswith(".json") or name.endswith(".vsh") or name.endswith(".fsh") or name.endswith(".glsl")
-                              ):
-                                  target = out / name
-                                  target.parent.mkdir(parents=True, exist_ok=True)
-                                  target.write_bytes(archive.read(name))
-                                  shader_count += 1
+                                  continue
+                              target = out / name
+                              target.parent.mkdir(parents=True, exist_ok=True)
+                              target.write_bytes(archive.read(name))
+                              shader_count += 1
                   except (BadZipFile, OSError):
                       pass
           print(f"extracted {shader_count} shader asset files")
+          if shader_count < 100:
+              raise SystemExit("Expected the core shader assets from the Minecraft client jar")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

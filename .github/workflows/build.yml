@@ -24,6 +24,31 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Build through the committed Gradle wrapper
         run: ./gradlew build nativeTest nativeFormatCheck --stacktrace
+      - name: Verify Java JNI entry points are exported by the native library
+        shell: bash
+        run: |
+          set -euo pipefail
+          library="native/target/release/libwhat_optimizations_native.so"
+          if [[ ! -f "$library" ]]; then
+            echo "Native library not found: $library" >&2
+            exit 1
+          fi
+          nm -D --defined-only "$library" | awk '{print $3}' > /tmp/what-optimizations-jni-symbols.txt
+          for symbol in \\
+            Java_dev_euthanized_whatoptimizations_Native_hello0 \\
+            Java_dev_euthanized_whatoptimizations_Native_meshSection0 \\
+            Java_dev_euthanized_whatoptimizations_Native_submitSection0 \\
+            Java_dev_euthanized_whatoptimizations_Native_submitSectionV2_0 \\
+            Java_dev_euthanized_whatoptimizations_Native_pollCompleted0 \\
+            Java_dev_euthanized_whatoptimizations_Native_release0 \\
+            Java_dev_euthanized_whatoptimizations_Native_visibleSections0
+          do
+            if ! grep -Fxq "$symbol" /tmp/what-optimizations-jni-symbols.txt; then
+              echo "Missing JNI symbol: $symbol" >&2
+              exit 1
+            fi
+          done
+          echo "All seven Java JNI entry points are exported."
       - name: Upload Linux-only smoke-test JAR
         uses: actions/upload-artifact@v4
         with:

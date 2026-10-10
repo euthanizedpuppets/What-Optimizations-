@@ -140,8 +140,10 @@ public final class NativeSectionMesher {
             // Capture failed: fall back to vanilla for this compile and mark
             // the section failed so vanilla geometry is rebuilt.
             NativeSectionOwnership.markFailed(sectionKey, "takeover capture failed");
+            NativeSectionOwnership.noteTakeoverFailure(sectionKey);
             return null;
         }
+        NativeSectionOwnership.noteTakeoverSuccess(sectionKey);
         CAPTURE_NANOS.addAndGet(System.nanoTime() - start);
         CAPTURE_COUNT.incrementAndGet();
         TOOK_OVER.set(Boolean.TRUE);

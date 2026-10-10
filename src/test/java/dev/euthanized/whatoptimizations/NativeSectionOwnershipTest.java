@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -16,9 +17,11 @@ import org.junit.jupiter.api.Test;
  * lifecycle/fallback transitions.
  */
 class NativeSectionOwnershipTest {
+    @BeforeEach
     @AfterEach
     void resetOwnership() {
         NativeSectionOwnership.clearAll();
+        NativeSectionOwnership.drainRecompileQueue();
     }
 
     private static long keyFor(int blockX, int blockY, int blockZ) {
@@ -40,16 +43,17 @@ class NativeSectionOwnershipTest {
     @Test
     void sectionKeyIsTheWorldSpaceBlockOrigin() {
         // Section keys are BlockPos.asLong(sectionPos.origin()) — world-space
-        // block origins, NOT section indices shifted by 4 bits.
+        // block origins (multiples of 16), NOT section indices shifted by 4.
         int[][] origins = {
             {0, 0, 0},
             {16, 0, 16},
             {-16, -16, -16},
             {-3_000_000, -64, 29_999_984},
             {29_999_984, 320, -29_999_984},
-            // BlockPos packing extremes: x/z in 26 bits, y in 12 bits.
-            {33_554_431, -2_048, -33_554_432},
-            {-33_554_432, 2_047, 33_554_431},
+            // BlockPos packing extremes (x/z in 26 bits, y in 12 bits), as
+            // section origins (multiples of 16).
+            {33_554_416, -2_048, -33_554_432},
+            {-33_554_432, 2_032, 33_554_416},
         };
         for (int[] origin : origins) {
             BlockPos blockPos = new BlockPos(origin[0], origin[1], origin[2]);
@@ -136,11 +140,9 @@ class NativeSectionOwnershipTest {
         NativeSectionOwnership.activate(key, NativeSectionOwnership.ALL_LAYERS);
         assertEquals(1, NativeSectionOwnership.queuedRecompileCount());
 
-        // Simulate the recompile being applied, then a rebuild completing.
-        NativeSectionOwnership.queuedRecompileCount(); // observation only
-        long key2 = keyFor(64, 0, 64);
-        NativeSectionOwnership.beginJob(key2, 1L);
-        NativeSectionOwnership.activate(key2, NativeSectionOwnership.ALL_LAYERS);
+        long other = keyFor(64, 0, 64);
+        NativeSectionOwnership.beginJob(other, 1L);
+        NativeSectionOwnership.activate(other, NativeSectionOwnership.ALL_LAYERS);
         assertEquals(2, NativeSectionOwnership.queuedRecompileCount());
 
         // Rebuild of the first section (already ACTIVE): no new recompile.
@@ -169,14 +171,26 @@ class NativeSectionOwnershipTest {
     }
 
     @Test
-    void repeatedFailuresMakeTheSectionPermanentlyUnsupported() {
+    void repeatedTakeoverFailuresMakeTheSectionPermanentlyUnsupported() {
         long key = keyFor(96, 0, 96);
-        for (int i = 0; i < 3; i++) {
-            NativeSectionOwnership.markFailed(key, "failure " + i);
-            assertFalse(NativeSectionOwnership.isUnsupported(key), "not yet unsupported at failure " + i);
-        }
+        NativeSectionOwnership.noteTakeoverFailure(key);
+        assertFalse(NativeSectionOwnership.isUnsupported(key));
+        NativeSectionOwnership.noteTakeoverFailure(key);
+        assertFalse(NativeSectionOwnership.isUnsupported(key));
+        NativeSectionOwnership.noteTakeoverFailure(key);
         assertTrue(NativeSectionOwnership.isUnsupported(key),
-                "three consecutive failures leave the section with vanilla");
+                "three consecutive takeover failures leave the section with vanilla");
+    }
+
+    @Test
+    void takeoverSuccessResetsTheFailureCount() {
+        long key = keyFor(104, 0, 104);
+        NativeSectionOwnership.noteTakeoverFailure(key);
+        NativeSectionOwnership.noteTakeoverFailure(key);
+        NativeSectionOwnership.noteTakeoverSuccess(key);
+        NativeSectionOwnership.noteTakeoverFailure(key);
+        assertFalse(NativeSectionOwnership.isUnsupported(key),
+                "a success resets the consecutive-failure count");
     }
 
     @Test

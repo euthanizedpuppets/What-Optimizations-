@@ -59,8 +59,8 @@ public final class NativeSectionOwnership {
         volatile long pendingTicket;
         volatile long pendingGeneration;
         volatile boolean recompileQueued;
-        /** Consecutive native failures; at the cap the section stays vanilla. */
-        volatile int failures;
+        /** Consecutive takeover-capture failures; at the cap the section stays vanilla. */
+        volatile int takeoverFailures;
         /** Permanently unsupported: no capture, no takeover, vanilla forever. */
         volatile boolean unsupported;
     }
@@ -163,7 +163,6 @@ public final class NativeSectionOwnership {
         entry.activeLayers = layerMask & ALL_LAYERS;
         entry.state = State.ACTIVE;
         entry.pendingTicket = 0L;
-        entry.failures = 0;
         ACTIVATIONS.incrementAndGet();
         if (!wasActive && !entry.recompileQueued) {
             entry.recompileQueued = true;
@@ -195,15 +194,7 @@ public final class NativeSectionOwnership {
         if (entry.state != State.FAILED) {
             entry.state = State.FAILED;
             entry.pendingTicket = 0L;
-            entry.failures++;
             FAILURES.incrementAndGet();
-            if (entry.failures >= 3) {
-                // A persistently failing section must not oscillate between
-                // native and vanilla forever; leave it with vanilla.
-                entry.unsupported = true;
-                LOGGER.warn("Section {} is permanently unsupported after {} native failures; using vanilla",
-                        sectionKey, entry.failures);
-            }
             queueRecompile(sectionKey);
             long count = FAILURES.get();
             long previous = LAST_FAILURE_LOG.get();
@@ -216,6 +207,36 @@ public final class NativeSectionOwnership {
 
     static void noteStaleResult() {
         STALE_RESULTS.incrementAndGet();
+    }
+
+    /**
+     * Worker thread: the takeover capture failed for this section. After
+     * three consecutive takeover failures the section is permanently
+     * unsupported and stays with vanilla instead of oscillating between
+     * native and vanilla on every rebuild.
+     */
+    static void noteTakeoverFailure(long sectionKey) {
+        Entry entry = entry(sectionKey);
+        entry.takeoverFailures++;
+        FAILURES.incrementAndGet();
+        if (entry.takeoverFailures >= 3 && !entry.unsupported) {
+            entry.unsupported = true;
+            LOGGER.warn("Section {} is permanently unsupported after {} takeover capture failures; using vanilla",
+                    sectionKey, entry.takeoverFailures);
+        }
+    }
+
+    /** Worker thread: the takeover capture succeeded; reset the failure count. */
+    static void noteTakeoverSuccess(long sectionKey) {
+        Entry entry = ENTRIES.get(sectionKey);
+        if (entry != null) {
+            entry.takeoverFailures = 0;
+        }
+    }
+
+    /** Test-visible: drops queued vanilla recompiles without applying them. */
+    static void drainRecompileQueue() {
+        RECOMPILE_QUEUE.clear();
     }
 
     static void queueRecompile(long sectionKey) {

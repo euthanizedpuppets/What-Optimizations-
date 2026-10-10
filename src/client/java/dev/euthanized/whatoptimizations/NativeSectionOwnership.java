@@ -32,10 +32,10 @@ import org.slf4j.LoggerFactory;
  * path always draws before vanilla's mesh disappears — a section can never go
  * invisible because vanilla was suppressed early.
  */
-final class NativeSectionOwnership {
+public final class NativeSectionOwnership {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/ownership");
 
-    enum State {
+    public enum State {
         VANILLA,
         PENDING,
         ACTIVE,
@@ -49,7 +49,7 @@ final class NativeSectionOwnership {
 
     private static final int MAX_ENTRIES = 131_072;
 
-    static final class Entry {
+    public static final class Entry {
         volatile State state = State.VANILLA;
         /** Layer bits whose native mesh is live in the GPU store. */
         volatile int activeLayers;
@@ -79,7 +79,7 @@ final class NativeSectionOwnership {
         return BlockPos.asLong(origin.getX(), origin.getY(), origin.getZ());
     }
 
-    static long sectionKey(long sectionNode) {
+    public static long sectionKey(long sectionNode) {
         SectionPos sectionPos = SectionPos.of(sectionNode);
         BlockPos origin = sectionPos.origin();
         return BlockPos.asLong(origin.getX(), origin.getY(), origin.getZ());
@@ -151,7 +151,7 @@ final class NativeSectionOwnership {
     }
 
     /** True when the section still has a drawable native mesh (ACTIVE, or FAILED with a live mesh). */
-    static boolean isDrawable(long sectionKey) {
+    public static boolean isDrawable(long sectionKey) {
         Entry entry = ENTRIES.get(sectionKey);
         return entry != null
                 && (entry.state == State.ACTIVE || entry.state == State.FAILED)
@@ -198,7 +198,7 @@ final class NativeSectionOwnership {
      * failures). Vanilla's own compile then rebuilds the section mesh, which
      * also re-runs the capture through the normal hook.
      */
-    static void applyQueuedRecompiles() {
+    public static void applyQueuedRecompiles() {
         Long key;
         while ((key = RECOMPILE_QUEUE.poll()) != null) {
             applyRecompile(key);
@@ -243,7 +243,7 @@ final class NativeSectionOwnership {
     }
 
     /** Render thread: drops one section entirely (view area recycling). */
-    static void remove(long sectionKey) {
+    public static void remove(long sectionKey) {
         Entry entry = ENTRIES.remove(sectionKey);
         if (entry != null && entry.state == State.ACTIVE) {
             // The recycled RenderSection no longer exists at this node; make
@@ -253,7 +253,7 @@ final class NativeSectionOwnership {
     }
 
     /** Render thread: reverts everything to vanilla (kill switch / unload). */
-    static int clearAll() {
+    public static int clearAll() {
         int active = 0;
         for (Map.Entry<Long, Entry> mapEntry : ENTRIES.entrySet()) {
             Entry entry = mapEntry.getValue();
@@ -274,7 +274,7 @@ final class NativeSectionOwnership {
         return ENTRIES.size();
     }
 
-    static int countByState(State wanted) {
+    public static int countByState(State wanted) {
         int count = 0;
         for (Entry entry : ENTRIES.values()) {
             if (entry.state == wanted) {
@@ -292,7 +292,7 @@ final class NativeSectionOwnership {
         return FAILURES.get();
     }
 
-    static long staleResults() {
+    public static long staleResults() {
         return STALE_RESULTS.get();
     }
 

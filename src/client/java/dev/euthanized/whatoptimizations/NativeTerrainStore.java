@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
  * completed mesh becomes drawable on the next frame — exactly like vanilla's
  * chunk buffer uploads.
  */
-final class NativeTerrainStore {
+public final class NativeTerrainStore {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/store");
 
     private static final int HEAP_BYTES = 48 * 1024 * 1024;
@@ -45,7 +45,7 @@ final class NativeTerrainStore {
     }
 
     /** Everything needed to build draw calls for one (section, layer). */
-    record DrawInfo(
+    public record DrawInfo(
             GpuBuffer buffer,
             int passthroughBaseVertex,
             int passthroughIndexCount,
@@ -62,7 +62,7 @@ final class NativeTerrainStore {
 
     private static final NativeTerrainStore INSTANCE = new NativeTerrainStore();
 
-    static NativeTerrainStore get() {
+    public static NativeTerrainStore get() {
         return INSTANCE;
     }
 
@@ -82,7 +82,7 @@ final class NativeTerrainStore {
     }
 
     /** Render thread: recreates GPU resources if the device was lost. */
-    void ensureDevicePublic() {
+    public void ensureDevicePublic() {
         ensureDevice();
     }
 
@@ -216,7 +216,7 @@ final class NativeTerrainStore {
         };
     }
 
-    DrawInfo drawInfo(long sectionKey, ChunkSectionLayer layer) {
+    public DrawInfo drawInfo(long sectionKey, ChunkSectionLayer layer) {
         return this.drawInfos.get(new MeshKey(sectionKey, layerId(layer)));
     }
 
@@ -233,23 +233,23 @@ final class NativeTerrainStore {
         }
     }
 
-    void removeSection(long sectionKey) {
+    public void removeSection(long sectionKey) {
         for (ChunkSectionLayer layer : ChunkSectionLayer.values()) {
             remove(sectionKey, layer);
         }
     }
 
     /** Closes all GPU resources. Render thread only. */
-    void close() {
+    public void close() {
         closeBuffers();
         this.pendingSizes.clear();
     }
 
-    boolean isClosed() {
+    public boolean isClosed() {
         return this.closed;
     }
 
-    long gpuBytes() {
+    public long gpuBytes() {
         long bytes = 0L;
         for (DrawInfo info : this.drawInfos.values()) {
             bytes += (long) info.passthroughIndexCount / 6 * 4 * Native.BLOCK_VERTEX_STRIDE
@@ -258,7 +258,7 @@ final class NativeTerrainStore {
         return bytes;
     }
 
-    int meshCount() {
+    public int meshCount() {
         return this.drawInfos.size();
     }
 }

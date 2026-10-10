@@ -232,7 +232,7 @@ public final class NativeSectionMesher {
         // Cancel superseded jobs for this section.
         for (Map.Entry<Long, PendingJob> entry : new ArrayList<>(PENDING.entrySet())) {
             PendingJob job = entry.getValue();
-            if (job.sectionKey == sectionKey && PENDING.remove(entry.getKey(), job)) {
+            if (job.sectionKey() == sectionKey && PENDING.remove(entry.getKey(), job)) {
                 safelyRelease(entry.getKey());
                 NativeSectionOwnership.noteStaleResult();
             }
@@ -277,7 +277,7 @@ public final class NativeSectionMesher {
             } catch (RuntimeException | LinkageError failure) {
                 recordFailure("Polling native ticket failed", failure);
                 finishTicket(ticket, job);
-                NativeSectionOwnership.markFailed(job.sectionKey, "poll failed");
+                NativeSectionOwnership.markFailed(job.sectionKey(), "poll failed");
                 continue;
             }
             if (status == 0) {
@@ -286,17 +286,17 @@ public final class NativeSectionMesher {
             if (status < 0) {
                 recordFailure("Native ticket " + ticket + " failed with " + status, null);
                 finishTicket(ticket, job);
-                NativeSectionOwnership.markFailed(job.sectionKey, "native job failed: " + status);
+                NativeSectionOwnership.markFailed(job.sectionKey(), "native job failed: " + status);
                 continue;
             }
             int totalBytes = status - 1;
             if (totalBytes <= 0 || totalBytes > output.capacity()) {
                 recordFailure("Native ticket returned impossible byte count " + totalBytes, null);
                 finishTicket(ticket, job);
-                NativeSectionOwnership.markFailed(job.sectionKey, "impossible result size");
+                NativeSectionOwnership.markFailed(job.sectionKey(), "impossible result size");
                 continue;
             }
-            if (!NativeSectionOwnership.isLatestGeneration(job.sectionKey, job.generation)) {
+            if (!NativeSectionOwnership.isLatestGeneration(job.sectionKey(), job.generation())) {
                 NativeSectionOwnership.noteStaleResult();
                 finishTicket(ticket, job);
                 continue;
@@ -307,7 +307,7 @@ public final class NativeSectionMesher {
             } catch (RuntimeException failure) {
                 recordFailure("Native WOM2 output failed validation", failure);
                 finishTicket(ticket, job);
-                NativeSectionOwnership.markFailed(job.sectionKey, "output validation failed");
+                NativeSectionOwnership.markFailed(job.sectionKey(), "output validation failed");
                 continue;
             }
             if (completed == null) {
@@ -329,18 +329,18 @@ public final class NativeSectionMesher {
                 byte[] passthrough = mesh.mesh.passthrough(slot);
                 byte[] merged = mesh.mesh.merged(slot);
                 if (passthrough.length == 0 && merged.length == 0) {
-                    store.remove(mesh.job.sectionKey, layer);
+                    store.remove(mesh.job().sectionKey(), layer);
                 } else {
-                    store.stageUpload(mesh.job.sectionKey, layer, passthrough, merged);
+                    store.stageUpload(mesh.job().sectionKey(), layer, passthrough, merged);
                 }
             }
         }
         store.flushUploads();
         for (CompletedMesh mesh : completed) {
             int layerMask = mesh.mesh.layerMask();
-            NativeSectionOwnership.activate(mesh.job.sectionKey, layerMask);
+            NativeSectionOwnership.activate(mesh.job().sectionKey(), layerMask);
             COMPLETED_JOBS.incrementAndGet();
-            NATIVE_NANOS.addAndGet(System.nanoTime() - mesh.job.submittedNanos);
+            NATIVE_NANOS.addAndGet(System.nanoTime() - mesh.job().submittedNanos());
         }
         NativeSectionOwnership.applyQueuedRecompiles();
         NativeSectionOwnership.enforceCap();

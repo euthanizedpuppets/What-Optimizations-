@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  * caught loudly instead of silently producing wrong native geometry. Only
  * active in debug mode (F9).
  */
-final class NativeMeshDifferential {
+public final class NativeMeshDifferential {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/diff");
 
     private static final ConcurrentHashMap<Long, Long> COMPARISONS = new ConcurrentHashMap<>();
@@ -119,7 +119,7 @@ final class NativeMeshDifferential {
         };
     }
 
-    static long comparisons() {
+    public static long comparisons() {
         long total = 0L;
         for (long value : COMPARISONS.values()) {
             total += value;
@@ -127,11 +127,11 @@ final class NativeMeshDifferential {
         return total;
     }
 
-    static long mismatches() {
+    public static long mismatches() {
         return MISMATCHES.get();
     }
 
-    static long matchedVertices() {
+    public static long matchedVertices() {
         return MATCHED_VERTICES.get();
     }
 }

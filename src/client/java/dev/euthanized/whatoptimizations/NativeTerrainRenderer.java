@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  * + occlusion graph), so native sections are never drawn when vanilla would not
  * draw them — the draw list is conservative by construction.
  */
-final class NativeTerrainRenderer {
+public final class NativeTerrainRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("what-optimizations/terrain");
 
     private static final ChunkSectionLayer[] LAYERS = ChunkSectionLayer.values();
@@ -82,7 +82,7 @@ final class NativeTerrainRenderer {
      * Render thread, inside the main frame pass. Draws every visible section
      * that the native renderer owns for the group's layers.
      */
-    static void drawGroup(ChunkSectionLayerGroup group, GpuSampler sampler) {
+    public static void drawGroup(ChunkSectionLayerGroup group, GpuSampler sampler) {
         if (!NativeRendererControls.rendererEnabled() || !NativeLoader.isLoaded()) {
             return;
         }
@@ -273,7 +273,7 @@ final class NativeTerrainRenderer {
     }
 
     /** Render thread: level unload / shutdown. */
-    static void shutdown() {
+    public static void shutdown() {
         NativeTerrainStore.get().close();
         NativeSectionOwnership.clearAll();
         lastDrawCalls = 0;
@@ -282,19 +282,19 @@ final class NativeTerrainRenderer {
         lastTiledDrawCalls = 0;
     }
 
-    static int lastDrawCalls() {
+    public static int lastDrawCalls() {
         return lastDrawCalls;
     }
 
-    static int lastTiledDrawCalls() {
+    public static int lastTiledDrawCalls() {
         return lastTiledDrawCalls;
     }
 
-    static int lastVerticesDrawn() {
+    public static int lastVerticesDrawn() {
         return lastVerticesDrawn;
     }
 
-    static int lastSectionsDrawn() {
+    public static int lastSectionsDrawn() {
         return lastSectionsDrawn;
     }
 }

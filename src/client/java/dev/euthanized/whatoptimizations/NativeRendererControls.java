@@ -1,5 +1,6 @@
 package dev.euthanized.whatoptimizations;
 
+import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,7 @@ public final class NativeRendererControls {
     private static boolean f8WasDown;
     private static boolean f9WasDown;
     private static boolean f7WasDown;
+    private static long lastTelemetryNanos;
 
     private NativeRendererControls() {
     }
@@ -84,6 +86,35 @@ public final class NativeRendererControls {
         // Applies queued vanilla recompiles (activations, failures, kill
         // switch) even when no jobs are in flight.
         NativeSectionOwnership.applyQueuedRecompiles();
+
+        // Make it obvious whether work reaches Rust and whether native meshes
+        // are actually being drawn, without flooding the log every frame.
+        if (Minecraft.getInstance().level != null) {
+            long nowNanos = System.nanoTime();
+            if (nowNanos - lastTelemetryNanos >= 10_000_000_000L) {
+                lastTelemetryNanos = nowNanos;
+                LOGGER.info(
+                        "Native terrain status: renderer={} mesher={} active={} pendingSections={} failedSections={} "
+                                + "callbacks={} submitted={} completed={} pendingJobs={} failures={} "
+                                + "avgCapture={}us avgNative={}us drawSections={} drawCalls={} drawVertices={} tiledDrawCalls={}",
+                        rendererEnabled,
+                        NativeSectionMesher.isEnabled(),
+                        NativeSectionOwnership.countByState(NativeSectionOwnership.State.ACTIVE),
+                        NativeSectionOwnership.countByState(NativeSectionOwnership.State.PENDING),
+                        NativeSectionOwnership.countByState(NativeSectionOwnership.State.FAILED),
+                        NativeSectionMesher.callbacks(),
+                        NativeSectionMesher.submittedJobs(),
+                        NativeSectionMesher.completedJobs(),
+                        NativeSectionMesher.pendingJobs(),
+                        NativeSectionMesher.failures(),
+                        NativeSectionMesher.averageCaptureMicros(),
+                        NativeSectionMesher.averageNativeMicros(),
+                        NativeTerrainRenderer.lastSectionsDrawn(),
+                        NativeTerrainRenderer.lastDrawCalls(),
+                        NativeTerrainRenderer.lastVerticesDrawn(),
+                        NativeTerrainRenderer.lastTiledDrawCalls());
+            }
+        }
     }
 
     /** Render thread: level unload / shutdown. */

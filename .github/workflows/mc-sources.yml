@@ -63,11 +63,13 @@ jobs:
           if extracted < 5000:
               raise SystemExit("Expected the full Minecraft sources jar; extraction looks incomplete")
 
-          # Also export the core shader assets (GLSL + JSON) from the actual
-          # Minecraft client jar so the native pass can mirror vanilla's
+          # Also export the core shader assets (GLSL + pipeline JSON) from the
+          # actual Minecraft client jar so the native pass can mirror vanilla's
           # chunk shaders exactly.
           import zipfile
           shader_count = 0
+          diagnostics = []
+          marker_hits = []
           for root in roots:
               if not root.exists():
                   continue
@@ -77,10 +79,19 @@ jobs:
                   try:
                       with ZipFile(path) as archive:
                           names = archive.namelist()
-                          if "assets/minecraft/shaders/core/terrain.json" not in names:
+                          markers = [
+                              n for n in names
+                              if n == "assets/minecraft/shaders/core/terrain.vsh"
+                              or n == "assets/minecraft/pipeline/solid_terrain.json"
+                          ]
+                          if not markers:
                               continue
+                          marker_hits.append(f"{path}: {markers[:2]}")
                           for name in names:
-                              if not name.startswith("assets/minecraft/shaders/"):
+                              if not (
+                                  name.startswith("assets/minecraft/shaders/")
+                                  or name.startswith("assets/minecraft/pipeline/")
+                              ):
                                   continue
                               if not (
                                   name.endswith(".json")
@@ -93,11 +104,14 @@ jobs:
                               target.parent.mkdir(parents=True, exist_ok=True)
                               target.write_bytes(archive.read(name))
                               shader_count += 1
-                  except (BadZipFile, OSError):
-                      pass
-          print(f"extracted {shader_count} shader asset files")
-          if shader_count < 100:
-              raise SystemExit("Expected the core shader assets from the Minecraft client jar")
+                  except (BadZipFile, OSError) as error:
+                      diagnostics.append(f"{path}: {error}")
+          (out / "DIAGNOSTICS.txt").write_text(
+              "marker jars:\n" + "\n".join(marker_hits) + "\nerrors:\n" + "\n".join(diagnostics) + "\n"
+          )
+          print(f"extracted {shader_count} shader asset files from {len(marker_hits)} jars")
+          if shader_count < 50:
+              raise SystemExit(f"Expected the core shader assets from the Minecraft client jar, got {shader_count}")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

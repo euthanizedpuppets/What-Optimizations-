@@ -1,0 +1,52 @@
+name: Build Debug Log
+
+# Captures the full Gradle build output (including Java compile errors and
+# JUnit test-result XMLs) and pushes it to the ci-build-logs branch so the
+# failure can be diagnosed where artifact/log downloads are unavailable.
+# Never merge that branch into main.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/build-debug.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-log:
+    name: Capture build log
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and capture log
+        run: |
+          set +e
+          ./gradlew build nativeTest nativeFormatCheck --stacktrace > /tmp/build-log.txt 2>&1
+          echo "gradle exit: $?" >> /tmp/build-log.txt
+          mkdir -p /tmp/logs
+          cp /tmp/build-log.txt /tmp/logs/build-log.txt
+          if [ -d build/test-results ]; then cp -r build/test-results /tmp/logs/test-results; fi
+          if [ -d build/reports ]; then cp -r build/reports /tmp/logs/reports; fi
+          if [ -d build/classes ]; then find build/classes -name "*.class" | head -5 > /tmp/logs/classes.txt; fi
+      - name: Push log to ci-build-logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan ci-build-logs
+          git rm -rf --quiet . 2>/dev/null || true
+          mkdir -p logs
+          cp -r /tmp/logs/* logs/
+          echo "Captured at $(date -u +%FT%TZ) on ${GITHUB_SHA}" > README.md
+          git add -A
+          git commit -m "CI build log for ${GITHUB_SHA}"
+          git push --force origin ci-build-logs

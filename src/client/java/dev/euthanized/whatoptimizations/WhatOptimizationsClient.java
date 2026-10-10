@@ -9,13 +9,15 @@ public final class WhatOptimizationsClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("What-Optimizations Phase 0 initialized (Minecraft 26.2 / OpenGL preference).");
+        LOGGER.info("What-Optimizations initialized (Minecraft 26.2 / Rust native terrain renderer).");
+        LOGGER.info("Controls: F8 toggle native rendering (default ON), F9 capture-vs-vanilla debug, F7 kill switch.");
+        LOGGER.info("Optional: -Dwhatoptimizations.nativeRenderer.tiled=true enables greedy-merged tiled terrain.");
         try {
             Native.hello();
             LOGGER.info("Rust JNI smoke test completed successfully.");
         } catch (LinkageError | RuntimeException failure) {
-            // Keep Phase 0 usable for Java-side investigation even if a native
-            // binary is missing or cannot be loaded on this host.
+            // Keep the game usable even if a native binary is missing or
+            // cannot be loaded on this host; every hook no-ops without it.
             LOGGER.error("Rust JNI smoke test failed; native rendering is unavailable.", failure);
         }
     }

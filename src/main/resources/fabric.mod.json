@@ -3,7 +3,7 @@
   "id": "what-optimizations",
   "version": "${version}",
   "name": "What Optimizations?",
-  "description": "A Rust-backed Minecraft 26.2 rendering experiment. Phase 0 scaffold only.",
+  "description": "A Rust-backed Minecraft 26.2 chunk-rendering experiment with asynchronous native meshing and an opt-in OpenGL 3.3 diagnostic pass.",
   "authors": [
     "euthanizedpuppets"
   ],
@@ -21,5 +21,6 @@
     "fabricloader": ">=0.19.3",
     "minecraft": "~26.2",
     "java": ">=25"
-  }
+  },
+  "icon": "What.png"
 }

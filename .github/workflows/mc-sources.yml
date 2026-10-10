@@ -1,0 +1,125 @@
+name: Export Minecraft 26.2 Sources
+
+# Manual workflow: generates the exact Mojang-mapped Minecraft 26.2 sources
+# with Loom genSources and pushes them to the mc-26.2-sources branch so the
+# rendering integration can be written against verified API signatures.
+# Artifact and log downloads are unavailable in some sandboxes, so a branch
+# is the transport. Never merge this branch into main.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mc-sources.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  export-sources:
+    name: Generate and push 26.2 sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Generate the exact Minecraft 26.2 decompiled sources
+        run: ./gradlew genSources --stacktrace
+      - name: Extract sources and push to mc-26.2-sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/mc-sources
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, BadZipFile
+
+          roots = [Path.home() / ".gradle", Path(".")]
+          extracted = 0
+          out = Path("build/mc-sources")
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob("*.jar"):
+                  if "sources" not in path.name.lower():
+                      continue
+                  try:
+                      with ZipFile(path) as archive:
+                          for name in archive.namelist():
+                              if not name.endswith(".java"):
+                                  continue
+                              if not (name.startswith("net/minecraft/") or name.startswith("com/mojang/blaze3d/")):
+                                  continue
+                              target = out / name
+                              target.parent.mkdir(parents=True, exist_ok=True)
+                              target.write_bytes(archive.read(name))
+                              extracted += 1
+                  except (BadZipFile, OSError):
+                      pass
+          print(f"extracted {extracted} source files")
+          if extracted < 5000:
+              raise SystemExit("Expected the full Minecraft sources jar; extraction looks incomplete")
+
+          # Also export the core shader assets (GLSL + pipeline JSON) from the
+          # actual Minecraft client jar so the native pass can mirror vanilla's
+          # chunk shaders exactly.
+          import zipfile
+          shader_count = 0
+          diagnostics = []
+          marker_hits = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob("*.jar"):
+                  if "sources" in path.name.lower():
+                      continue
+                  try:
+                      with ZipFile(path) as archive:
+                          names = archive.namelist()
+                          markers = [
+                              n for n in names
+                              if n == "assets/minecraft/shaders/core/terrain.vsh"
+                              or n == "assets/minecraft/pipeline/solid_terrain.json"
+                          ]
+                          if not markers:
+                              continue
+                          marker_hits.append(f"{path}: {markers[:2]}")
+                          for name in names:
+                              if not (
+                                  name.startswith("assets/minecraft/shaders/")
+                                  or name.startswith("assets/minecraft/pipeline/")
+                              ):
+                                  continue
+                              if not (
+                                  name.endswith(".json")
+                                  or name.endswith(".vsh")
+                                  or name.endswith(".fsh")
+                                  or name.endswith(".glsl")
+                              ):
+                                  continue
+                              target = out / name
+                              target.parent.mkdir(parents=True, exist_ok=True)
+                              target.write_bytes(archive.read(name))
+                              shader_count += 1
+                  except (BadZipFile, OSError) as error:
+                      diagnostics.append(f"{path}: {error}")
+          (out / "DIAGNOSTICS.txt").write_text(
+              "marker jars:\n" + "\n".join(marker_hits) + "\nerrors:\n" + "\n".join(diagnostics) + "\n"
+          )
+          print(f"extracted {shader_count} shader asset files from {len(marker_hits)} jars")
+          if shader_count < 50:
+              raise SystemExit(f"Expected the core shader assets from the Minecraft client jar, got {shader_count}")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan mc-26.2-sources
+          git rm -rf --quiet . 2>/dev/null || true
+          mkdir -p sources
+          cp -r build/mc-sources/* sources/
+          echo "Mojang-mapped Minecraft 26.2 sources generated by Loom genSources (see workflow run)." > README.md
+          git add -A
+          git commit -m "Minecraft 26.2 Mojang-mapped sources (genSources export)"
+          git push --force origin mc-26.2-sources

@@ -4,3 +4,4 @@
 *.iml
 .idea/
 .DS_Store
+/native/Cargo.lock

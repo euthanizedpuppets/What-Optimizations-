@@ -13,6 +13,7 @@ import java.util.Locale;
  */
 final class NativeLoader {
     private static volatile boolean loaded;
+    private static volatile LinkageError loadFailure;
 
     private NativeLoader() {
     }
@@ -21,9 +22,15 @@ final class NativeLoader {
         if (loaded) {
             return;
         }
+        if (loadFailure != null) {
+            throw loadFailure;
+        }
         synchronized (NativeLoader.class) {
             if (loaded) {
                 return;
+            }
+            if (loadFailure != null) {
+                throw loadFailure;
             }
 
             String platform = platformToken();
@@ -43,13 +50,21 @@ final class NativeLoader {
                 extracted.toFile().deleteOnExit();
                 System.load(extracted.toAbsolutePath().toString());
                 loaded = true;
+            } catch (LinkageError failure) {
+                loadFailure = failure;
+                throw failure;
             } catch (IOException failure) {
                 UnsatisfiedLinkError error = new UnsatisfiedLinkError(
                         "Could not extract native library resource " + resource);
                 error.initCause(failure);
+                loadFailure = error;
                 throw error;
             }
         }
+    }
+
+    static boolean isLoaded() {
+        return loaded;
     }
 
     private static String platformToken() {

@@ -23,6 +23,15 @@ sourceSets.main.resources.srcDir(layout.buildDirectory.dir('generated/nativeReso
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.11.4"
+}
+
+// Loom already wires the test source set to the client source set when
+// splitEnvironmentSourceSets() is used (test classpath extends the client
+// classpath and sees the client output).
+test {
+    useJUnitPlatform()
 }
 
 java {
@@ -55,6 +64,20 @@ tasks.register('buildNative', Exec) {
     description = 'Builds the Rust JNI cdylib in release mode.'
     workingDir projectDir
     commandLine 'cargo', 'build', '--release', '--manifest-path', 'native/Cargo.toml'
+}
+
+tasks.register('nativeTest', Exec) {
+    group = 'verification'
+    description = 'Runs the Rust mesher, async ticket, and visibility regression tests.'
+    workingDir projectDir
+    commandLine 'cargo', 'test', '--manifest-path', 'native/Cargo.toml'
+}
+
+tasks.register('nativeFormatCheck', Exec) {
+    group = 'verification'
+    description = 'Checks Rust source formatting without modifying files.'
+    workingDir projectDir
+    commandLine 'cargo', 'fmt', '--manifest-path', 'native/Cargo.toml', '--all', '--', '--check'
 }
 
 tasks.register('stageNative') {

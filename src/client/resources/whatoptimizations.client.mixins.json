@@ -3,9 +3,14 @@
   "package": "dev.euthanized.whatoptimizations.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "ForceOpenGLWindowMixin",
-    "ForceOpenGLOptionsMixin",
-    "SectionCompilerMesherMixin"
+    "SectionCompilerMesherMixin",
+    "SectionCompilerAccess",
+    "SectionCompilerResultsAccess",
+    "ChunkSectionsToRenderMixin",
+    "RenderSectionResetMixin",
+    "MinecraftTickMixin",
+    "NativeRendererMixin",
+    "DebugScreenOverlayMixin"
   ],
   "injectors": {
     "defaultRequire": 1

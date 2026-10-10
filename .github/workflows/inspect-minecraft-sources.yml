@@ -2,7 +2,7 @@ name: Inspect Minecraft 26.2 Sources
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'phase1/**']
     paths:
       - '.github/workflows/inspect-minecraft-sources.yml'
   workflow_dispatch:
@@ -45,6 +45,12 @@ jobs:
               "Block.java",
               "LightLayer.java",
               "LayerLightEventListener.java",
+              "Window.java",
+              "GameRenderer.java",
+              "LevelRenderer.java",
+              "RenderSystem.java",
+              "MeshData.java",
+              "DebugScreenOverlay.java",
           }
           found = {}
           scanned = 0
@@ -81,7 +87,7 @@ jobs:
                   lines = source.splitlines()
                   if name == "SectionCompiler.java":
                       ranges = [(0, len(lines))]
-                  elif name == "RenderSectionRegion.java":
+                  elif name in {"RenderSectionRegion.java", "MeshData.java"}:
                       ranges = [(0, len(lines))]
                   elif name == "SectionRenderDispatcher.java":
                       needles = ["compileAsync(", "compileSync(", "class RenderSection", "class CompileTask", "sectionCompiler.compile(", "void rebuildSectionAsync", "CompletableFuture"]
@@ -89,6 +95,16 @@ jobs:
                       for i, line in enumerate(lines):
                           if any(n in line for n in needles):
                               ranges.append((max(0, i - 10), min(len(lines), i + 30)))
+                  elif name in {"Window.java", "GameRenderer.java", "LevelRenderer.java", "RenderSystem.java", "DebugScreenOverlay.java"}:
+                      needles = ["renderLevel(", "getWindow(", "getWindowHandle(", "window;", "window =",
+                                 "Camera", "camera", "getMainCamera", "getCamera(", "projectionMatrix",
+                                 "modelViewMatrix", "getProjectionMatrix", "getModelViewMatrix",
+                                 "getModelViewStack", "Matrix4f", "PoseStack", "projectionMatrixStack",
+                                 "getGameInformation", "getSystemInformation", "getGameInformationLines", "getSystemInformationLines"]
+                      ranges = []
+                      for i, line in enumerate(lines):
+                          if any(n in line for n in needles):
+                              ranges.append((max(0, i - 5), min(len(lines), i + 14)))
                   else:
                       needles = ["getRenderShape(", "isSolidRender(", "isAir(", "getFluidState(", "isCollisionShapeFullBlock(", "getShape(", "getId(BlockState", "getId(final BlockState", "getLayerListener(", "getLightValue("]
                       ranges = []

@@ -1,46 +1,123 @@
 # What-Optimizations-
 
-A deliberately overengineered Minecraft Java 26.2 Fabric experiment: moving chunk-section CPU work into Rust through JNI.
+A deliberately overengineered Minecraft Java 26.2 Fabric experiment: replace
+vanilla's CPU-heavy chunk-section meshing and drawing with an asynchronous
+Rust pipeline that renders real, textured Minecraft geometry through
+Minecraft's own render pipelines.
 
-## Current stage: Phase 1 — shadow mesher
+## Target and CLI
 
-The Phase 0 build scaffold passes GitHub Actions. Phase 1 now intercepts the verified 26.2 section compiler return path, snapshots each section plus a one-block border, and hands the snapshot to Rust.
+- Minecraft Java Edition **26.2**, Java **25**, Fabric Loader **0.19.5**.
+- Rust `cdylib`, JNI direct-buffer ABI, bounded Rayon workers.
+- The Gradle wrapper is committed; a global Gradle installation is not required.
+- The renderer is backend-agnostic: it draws through vanilla's
+  `RenderPipeline`/`RenderPass` API, so no GL/Vulkan backend is forced.
 
-- Java 25, Minecraft 26.2, Mojang's unobfuscated names, Fabric Loader 0.19.5.
-- Rust cdylib with jni and a bounded Rayon worker pool.
-- Bulk direct-buffer ABI: one input/output pair per section, never one JNI call per block or quad.
-- An 18×18×18 snapshot containing state IDs, palette flags, and block/sky light values.
-- Rust face occlusion, greedy coplanar rectangle merging, initial corner AO/light sampling, and a 16-byte vertex stride.
-- A 16 MiB access-ordered CPU cache for native output.
-- GitHub Actions compiles native code and packages the platform libraries inside the Fabric mod JAR.
+Build the Fabric mod and platform-native library:
 
-The source-audit workflow runs Loom's genSources on the exact Minecraft 26.2 dependency. It verified this actual method signature:
+```sh
+./gradlew build
+```
 
-    SectionCompiler.compile(SectionPos, RenderSectionRegion, VertexSorting, SectionBufferBuilderPack)
+Run Rust unit/regression tests:
 
-The mixin injects at RETURN and leaves the original vanilla mesh untouched.
+```sh
+./gradlew nativeTest
+```
 
-## Important rendering limitations
+Check Rust formatting:
 
-This is intentionally a shadow implementation, not yet a visible replacement renderer. Vanilla still renders all geometry. Rust's output is cached for inspection and later upload/draw work.
+```sh
+./gradlew nativeFormatCheck
+```
 
-Only full opaque model cubes without fluids or block entities are admitted to the native cube path. Plants, stairs/slabs and other non-full shapes, transparent blocks, fluids, special models, and block entities remain exclusively on vanilla's renderer. This avoids silently pretending a generic cube mesh can replace every Minecraft model.
+The wrapper downloads Gradle 9.7.0 once. Java 25 and Rust/Cargo are still required for a local native build. GitHub Actions builds and packages Linux, macOS, and Windows native libraries into the JAR.
 
-The initial AO and light samples are approximate and require visual/numeric comparison with vanilla before the native geometry may be used for actual rendering. Block state IDs currently stand in as material keys; they do not yet encode block atlas UVs, biome tint, shader/render-layer identity, or special vertex attributes.
+## Current implementation
 
-## Get the build
+See [Native Terrain Pipeline](docs/NATIVE_TERRAIN_PIPELINE.md) for the full
+design and [Implementation Phases](docs/PHASES.md) for the phase history.
 
-Open the repository's Actions tab, choose the latest successful Build run, and download the minecraft-mod-jar artifact. Extract the artifact ZIP and put its JAR in the Minecraft 26.2 Fabric instance's mods directory. The JAR contains the native binaries produced by CI.
+### Capture (Java, vanilla compile worker threads)
 
-Local build prerequisites are Java 25, Gradle 9.7.0 for the resolved Loom 1.18.3 plugin, and Rust/Cargo. GitHub Actions performs builds for you.
+`SectionCompiler.compile` is hooked at HEAD and RETURN. For a section the
+native renderer already owns (ACTIVE), the HEAD hook runs a *takeover capture*:
+vanilla's own `ModelBlockRenderer` and `FluidRenderer` tessellate the section
+with a capturing `VertexConsumer` per render layer, replicating vanilla's loop
+exactly (culling, AO, biome tint, directional shading, light smoothing, model
+offsets, fluids, block entities, visibility graph), and the compile returns a
+`Results` with **empty rendered layers** — vanilla meshes and draws nothing for
+that section from then on. For the first build of a section, the RETURN hook
+runs a *shadow capture*: vanilla's finished per-layer `MeshData` vertex buffers
+(already in the 28-byte BLOCK format) are copied into a WOM2 snapshot at the
+cost of one memcpy per layer.
 
-## Compatibility
+### Meshing (Rust, asynchronous worker pool)
 
-The mod prefers OpenGL because the proposed custom draw path targets OpenGL 3.3 core. Backend-selection mixins can conflict with other mods changing early graphics initialization. The section compiler hook is also likely to conflict with Sodium or other mods that replace vanilla chunk compilation. Do not combine them without an explicit compatibility layer.
+The WOM2 snapshot is copied into Rust-owned memory and meshed on a bounded
+Rayon pool. Rust validates the ABI and emits, per layer, a **passthrough**
+stream (byte-identical to vanilla) plus an optional **merged** stream: cube-face
+runs greedily merged into maximal rectangles in a 44-byte tiled layout
+(block-unit UVs + a per-vertex sprite rectangle). Merging only fires where it is
+provably visually identical (axis-aligned unit quads in vanilla's `FaceInfo`
+corner order with uniform corner color/light and a consistent UV orientation).
+Tickets carry a section key and generation; stale results are discarded;
+every job is explicitly released.
 
-## Next stages
+### Upload and drawing (Java, render thread)
 
-- Phase 1: validate snapshot and packed mesh output in game against known block arrangements; then add correct render-layer/material/UV/tint handling and upload.
-- Phase 2: Rust visibility and cave graph, still validated against vanilla.
-- Phase 3: bounded GPU allocator and custom OpenGL draw path.
-- Phase 4: optional Rust-side GL calls on the render thread only.
+Completed meshes are staged into per-layer `UberGpuBuffer` heaps (vanilla's own
+allocator and `StagingBuffer`) and flushed after polling, so a mesh becomes
+drawable the next frame — exactly like vanilla's chunk buffer uploads.
+Ownership flips to ACTIVE once the mesh is uploaded, and a vanilla recompile is
+queued so the next compile takes over (vanilla's mesh is released by vanilla
+itself). `ChunkSectionsToRender.renderGroup` is hooked at TAIL: for each visible
+section the native renderer owns, it issues `drawMultipleIndexed` calls with
+vanilla's `SOLID_TERRAIN` / `CUTOUT_TERRAIN` / `TRANSLUCENT_TERRAIN` pipelines,
+the block atlas (`Sampler0`), the lightmap (`Sampler2`), the shared sequential
+QUADS index buffer and per-section `ChunkSection` uniform data — inside the
+same frame pass, on the same render target, right after vanilla's terrain pass.
+Opt-in tiled pipelines (`-Dwhatoptimizations.nativeRenderer.tiled=true`) draw
+the merged stream with a custom `terrain_tiled` shader that reconstructs
+per-block texturing exactly (`atlasUV = spriteRect.xy + fract(uv) * spriteRect.zw`).
+
+### Safety model
+
+A section is never invisible: vanilla geometry is only dropped (empty rendered
+layers via takeover) after a native mesh for that exact section has been staged
+and uploaded, and the native mesh has been drawable since the frame after
+staging. Failures (capture errors, Rust errors, upload errors, queue limits)
+mark the section FAILED and queue a vanilla recompile through
+`levelExtractor.setSectionDirty`; any previously uploaded native mesh keeps
+drawing meanwhile. The kill switch, level unload/dimension change and section
+recycling all fall back to vanilla. Visibility for native draws comes from
+vanilla's own `visibleSections` list (frustum + occlusion graph), so native
+sections are never drawn when vanilla would not draw them.
+
+## Runtime controls
+
+- **F8** — toggle native terrain replacement (default **ON** when the native
+  library loads). Turning it off reverts every section to vanilla and queues
+  vanilla recompiles.
+- **F9** — toggle debug mode: the takeover capture runs alongside vanilla
+  compilation and is compared vertex-by-vertex against vanilla's output.
+- **F7** — kill switch: stops all capturing and meshing immediately.
+
+JVM properties:
+
+- `-Dwhatoptimizations.nativeRenderer=false` starts with native rendering disabled.
+- `-Dwhatoptimizations.nativeRenderer.tiled=true` enables the opt-in greedy-merged
+  tiled terrain pipeline (custom shader; not exercised by CI).
+- `-Dwhatoptimizations.nativeMesher=false` starts with Rust meshing disabled.
+- `-Dwhatoptimizations.nativeMesher.debug=true` starts F9 diagnostics enabled.
+
+## Verification status
+
+- Rust: `cargo test` (43 unit tests: v1 cube mesher, WOM2 mesher, tickets,
+  visibility) and `cargo fmt --check` pass locally and in CI on Linux, Windows
+  and macOS; release `cdylib` builds on all three.
+- Java: the full mod jar builds against real Minecraft 26.2 in CI
+  (`./gradlew build nativeTest nativeFormatCheck`).
+- **In-game visual verification has not been performed** (no game runtime in
+  CI). See the final report for the exact in-game checks: F3 telemetry, F8
+  toggle, chunk rebuild with F3+A, dimension switch, resource reload.

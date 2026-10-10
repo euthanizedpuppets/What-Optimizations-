@@ -1,0 +1,5 @@
+build/classes/java/client/dev/euthanized/whatoptimizations/NativeTiledPipelines$1.class
+build/classes/java/client/dev/euthanized/whatoptimizations/NativeSectionMesher$PendingJob.class
+build/classes/java/client/dev/euthanized/whatoptimizations/NativeSectionMesher$CompletedMesh.class
+build/classes/java/client/dev/euthanized/whatoptimizations/NativeSectionCapture.class
+build/classes/java/client/dev/euthanized/whatoptimizations/NativeTiledPipelines.class

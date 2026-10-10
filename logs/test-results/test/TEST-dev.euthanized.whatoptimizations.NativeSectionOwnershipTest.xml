@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-10T19:15:23.655Z" hostname="runnervmmprz5" time="0.451">
+  <properties/>
+  <testcase name="freshSectionsStartVanillaAndNotDrawable()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.397"/>
+  <testcase name="failureKeepsTheOldMeshDrawableAndRecovers()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.011"/>
+  <testcase name="lifecycleTransitions()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="repeatedTakeoverFailuresMakeTheSectionPermanentlyUnsupported()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.002"/>
+  <testcase name="takeoverSuccessResetsTheFailureCount()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.003"/>
+  <testcase name="rebuildOfActiveSectionDoesNotRequeueRecompiles()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.0"/>
+  <testcase name="invalidationDropsTheMeshWithoutARecompile()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="sectionKeyIsTheWorldSpaceBlockOrigin()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.003"/>
+  <testcase name="activationClampsTheLayerMask()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="staleGenerationResultsAreRejected()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="removalDropsTheEntry()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.0"/>
+  <testcase name="unpackingSectionKeysHandlesNegativeAndLargeCoordinates()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="layerBitsAreDistinctAndComplete()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <testcase name="sectionNodeRoundTripsThroughTheOrigin()" classname="dev.euthanized.whatoptimizations.NativeSectionOwnershipTest" time="0.001"/>
+  <system-out><![CDATA[[19:15:24] [Test worker/WARN]: Native terrain failure for section 21990232883200: test failure (1 failures so far)
+[19:15:24] [Test worker/WARN]: Section 26388279459840 is permanently unsupported after 3 takeover capture failures; using vanilla
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

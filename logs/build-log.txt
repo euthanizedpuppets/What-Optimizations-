@@ -1,0 +1,248 @@
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-9.7.0-bin.zip
+..............10%..............20%...............30%..............40%..............50%...............60%..............70%..............80%...............90%..............100%
+
+Welcome to Gradle 9.7.0!
+
+Here are the highlights of this release:
+ - Isolated Projects graduates to incubating
+ - Broader Configuration Cache compatibility
+ - More source locations in problem reports
+
+For more details see https://docs.gradle.org/9.7.0/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Configure project :
+Fabric Loom: 1.18.4
+
+> Task :compileJava
+
+> Task :buildNative
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 36 packages to highest compatible versions
+[1m[92m      Adding[0m jni v0.21.1 [1m[33m(available: v0.22.4)[0m
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m cesu8 v1.1.0
+[1m[92m  Downloaded[0m cfg-if v1.0.5
+[1m[92m  Downloaded[0m crossbeam-deque v0.8.8
+[1m[92m  Downloaded[0m jni-sys v0.3.1
+[1m[92m  Downloaded[0m jni-sys v0.4.1
+[1m[92m  Downloaded[0m jni-sys-macros v0.4.1
+[1m[92m  Downloaded[0m bytes v1.12.1
+[1m[92m  Downloaded[0m same-file v1.0.6
+[1m[92m  Downloaded[0m thiserror-impl v1.0.69
+[1m[92m  Downloaded[0m walkdir v2.5.0
+[1m[92m  Downloaded[0m either v1.19.0
+[1m[92m  Downloaded[0m combine v4.6.8
+[1m[92m  Downloaded[0m crossbeam-utils v0.8.23
+[1m[92m  Downloaded[0m thiserror v1.0.69
+[1m[92m  Downloaded[0m log v0.4.34
+[1m[92m  Downloaded[0m quote v1.0.47
+[1m[92m  Downloaded[0m unicode-ident v1.0.26
+[1m[92m  Downloaded[0m crossbeam-epoch v0.9.21
+[1m[92m  Downloaded[0m proc-macro2 v1.0.107
+[1m[92m  Downloaded[0m rayon-core v1.13.0
+[1m[92m  Downloaded[0m jni v0.21.1
+[1m[92m  Downloaded[0m memchr v2.8.3
+[1m[92m  Downloaded[0m rayon v1.12.0
+[1m[92m  Downloaded[0m syn v2.0.119
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.26
+[1m[92m   Compiling[0m crossbeam-utils v0.8.23
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.21
+[1m[92m   Compiling[0m crossbeam-deque v0.8.8
+[1m[92m   Compiling[0m jni-sys v0.3.1
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m bytes v1.12.1
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m combine v4.6.8
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m cfg-if v1.0.5
+[1m[92m   Compiling[0m cesu8 v1.1.0
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m either v1.19.0
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m jni-sys-macros v0.4.1
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m jni-sys v0.4.1
+[1m[92m   Compiling[0m jni v0.21.1
+[1m[92m   Compiling[0m what_optimizations_native v0.1.0 (/home/runner/work/What-Optimizations-/What-Optimizations-/native)
+[1m[33mwarning[0m[1m: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency[0m
+  [1m[94m--> [0msrc/async_jobs.rs:67:10
+   [1m[94m|[0m
+[1m[94m67[0m [1m[94m|[0m         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+   [1m[94m|[0m          [1m[33m^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(deprecated)]` on by default
+[1m[96mhelp[0m: replace the use of the deprecated method
+   [1m[94m|[0m
+[1m[94m67[0m [91m- [0m        .[91mfetch_update[0m(Ordering::AcqRel, Ordering::Acquire, |current| {
+[1m[94m67[0m [92m+ [0m        .[92mtry_update[0m(Ordering::AcqRel, Ordering::Acquire, |current| {
+   [1m[94m|[0m
+
+[1m[33mwarning[0m[1m: function `write_u8` is never used[0m
+   [1m[94m--> [0msrc/lib.rs:161:4
+    [1m[94m|[0m
+[1m[94m161[0m [1m[94m|[0m fn write_u8(data: &mut [u8], offset: usize, value: u8) {
+    [1m[94m|[0m    [1m[33m^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: function `write_block_vertex` is never used[0m
+   [1m[94m--> [0msrc/mesh_v2.rs:644:4
+    [1m[94m|[0m
+[1m[94m644[0m [1m[94m|[0m fn write_block_vertex(out: &mut Vec<u8>, vertex: &V2Vertex) {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `write_tiled_vertex` is never used[0m
+   [1m[94m--> [0msrc/mesh_v2.rs:669:4
+    [1m[94m|[0m
+[1m[94m669[0m [1m[94m|[0m fn write_tiled_vertex(out: &mut Vec<u8>, vertex: &MergedVertex) {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `what_optimizations_native` (lib) generated 4 warnings (run `cargo fix --lib -p what_optimizations_native` to apply 1 suggestion)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 12.61s
+
+> Task :stageNative
+Staged native library: /home/runner/work/What-Optimizations-/What-Optimizations-/build/generated/nativeResources/natives/linux-x86_64/libwhat_optimizations_native.so
+
+> Task :processResources
+> Task :classes
+
+> Task :compileClientJava
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :processClientResources
+> Task :processIncludeJars
+> Task :jar
+> Task :sourcesJar
+> Task :assemble
+> Task :clientClasses
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+> Task :test
+> Task :validateAccessWidener NO-SOURCE
+> Task :check
+> Task :build
+
+> Task :nativeTest
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.26
+[1m[92m   Compiling[0m crossbeam-utils v0.8.23
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.21
+[1m[92m   Compiling[0m crossbeam-deque v0.8.8
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m jni-sys v0.3.1
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m bytes v1.12.1
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m combine v4.6.8
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m either v1.19.0
+[1m[92m   Compiling[0m cfg-if v1.0.5
+[1m[92m   Compiling[0m cesu8 v1.1.0
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m jni-sys-macros v0.4.1
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m jni-sys v0.4.1
+[1m[92m   Compiling[0m jni v0.21.1
+[1m[92m   Compiling[0m what_optimizations_native v0.1.0 (/home/runner/work/What-Optimizations-/What-Optimizations-/native)
+[1m[33mwarning[0m[1m: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency[0m
+  [1m[94m--> [0msrc/async_jobs.rs:67:10
+   [1m[94m|[0m
+[1m[94m67[0m [1m[94m|[0m         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+   [1m[94m|[0m          [1m[33m^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(deprecated)]` on by default
+[1m[96mhelp[0m: replace the use of the deprecated method
+   [1m[94m|[0m
+[1m[94m67[0m [91m- [0m        .[91mfetch_update[0m(Ordering::AcqRel, Ordering::Acquire, |current| {
+[1m[94m67[0m [92m+ [0m        .[92mtry_update[0m(Ordering::AcqRel, Ordering::Acquire, |current| {
+   [1m[94m|[0m
+
+[1m[33mwarning[0m[1m: function `write_block_vertex` is never used[0m
+   [1m[94m--> [0msrc/mesh_v2.rs:644:4
+    [1m[94m|[0m
+[1m[94m644[0m [1m[94m|[0m fn write_block_vertex(out: &mut Vec<u8>, vertex: &V2Vertex) {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: function `write_tiled_vertex` is never used[0m
+   [1m[94m--> [0msrc/mesh_v2.rs:669:4
+    [1m[94m|[0m
+[1m[94m669[0m [1m[94m|[0m fn write_tiled_vertex(out: &mut Vec<u8>, vertex: &MergedVertex) {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `what_optimizations_native` (lib test) generated 3 warnings (run `cargo fix --lib -p what_optimizations_native --tests` to apply 1 suggestion)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 6.07s
+[1m[92m     Running[0m unittests src/lib.rs (native/target/debug/deps/what_optimizations_native-211ffa9df9e1c0dc)
+
+running 43 tests
+test async_jobs::async_visibility_tests::cave_graph_walk_traverses_only_mutually_open_section_faces ... ok
+test async_jobs::async_visibility_tests::frustum_culling_rejects_outside_section ... ok
+test mesh_v2::tests::adjacent_coplanar_uniform_quads_merge_into_one ... ok
+test async_jobs::async_visibility_tests::missing_camera_section_fails_open_to_frustum_results ... ok
+test mesh_v2::tests::debug_classify_up_quad ... ok
+test mesh_v2::tests::diagonal_cells_stay_separate ... ok
+test mesh_v2::tests::different_orientations_do_not_merge ... ok
+test mesh_v2::tests::different_planes_do_not_merge ... ok
+test mesh_v2::tests::different_uv_rects_do_not_merge ... ok
+test mesh_v2::tests::differing_corner_attributes_prevent_merging ... ok
+test mesh_v2::tests::empty_section_produces_valid_empty_output ... ok
+test mesh_v2::tests::malformed_inputs_are_rejected ... ok
+test mesh_v2::tests::flipped_orientation_encodes_negative_sprite_extents ... ok
+test mesh_v2::tests::layers_stay_separate ... ok
+test mesh_v2::tests::merged_uv_block_units_reconstruct_unit_uvs ... ok
+test mesh_v2::tests::merging_disabled_emits_passthrough_only ... ok
+test mesh_v2::tests::mixed_candidates_and_passthrough_split_correctly ... ok
+test mesh_v2::tests::non_finite_vertex_positions_are_rejected ... ok
+test mesh_v2::tests::non_unit_and_fractional_quads_pass_through ... ok
+test mesh_v2::tests::section_boundary_coordinates_merge ... ok
+test mesh_v2::tests::single_quad_passes_through_identically ... ok
+test mesh_v2::tests::two_by_two_cells_merge_to_one_quad ... ok
+test mesh_v2::tests::meshing_is_deterministic ... ok
+test mesh_v2::tests::full_sixteen_by_sixteen_wall_merges_to_one_quad ... ok
+test mesh_v2::tests::output_quad_counts_never_exceed_input ... ok
+test tests::diagonal_cubes_keep_separate_surfaces ... ok
+test tests::empty_section_has_no_vertices ... ok
+test tests::inconsistent_total_byte_count_is_rejected ... ok
+test tests::invalid_palette_index_is_rejected ... ok
+test tests::face_mask_limits_output_to_enabled_directions ... ok
+test tests::checkerboard_opaque_section_fits_maximum_output_capacity ... ok
+test tests::malformed_header_is_rejected ... ok
+test tests::isolated_cube_keeps_expected_uniform_corner_light_and_ao ... ok
+test tests::opposite_section_corners_use_the_padding_without_out_of_bounds_access ... ok
+test tests::one_cube_has_six_triangle_pairs ... ok
+test tests::non_meshable_opaque_cells_emit_no_faces ... ok
+test tests::adjacent_cubes_merge_along_each_axis ... ok
+test tests::single_cube_emits_all_six_faces_with_valid_local_coordinates ... ok
+test tests::single_cube_triangles_have_outward_winding ... ok
+test tests::two_adjacent_cubes_merge_to_a_box ... ok
+test tests::too_small_output_is_rejected ... ok
+test tests::padded_neighbor_culls_the_outside_face ... ok
+test tests::solid_two_by_two_by_two_box_collapses_to_six_quads ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+> Task :nativeFormatCheck
+
+[Incubating] Problems report is available at: file:///home/runner/work/What-Optimizations-/What-Optimizations-/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.7.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 1m 15s
+13 actionable tasks: 13 executed
+gradle exit: 0

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.euthanized.whatoptimizations.Wom2AbiTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-10T19:15:24.109Z" hostname="runnervmmprz5" time="0.098">
+  <properties/>
+  <testcase name="magicIsTheAsciiBytesWom2()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.002"/>
+  <testcase name="vertexStridesMatchTheGpuFormats()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.001"/>
+  <testcase name="headerAndTableLayoutConstants()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.0"/>
+  <testcase name="limitsAreBounded()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.0"/>
+  <testcase name="quadIndexCountsFitTheSequentialBuffer()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.0"/>
+  <testcase name="layerIdsFollowTheChunkSectionLayerEnumOrder()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.09"/>
+  <testcase name="storeAlignmentFitsBothVertexStrides()" classname="dev.euthanized.whatoptimizations.Wom2AbiTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

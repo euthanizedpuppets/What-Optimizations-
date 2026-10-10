@@ -151,7 +151,7 @@ public final class NativeSectionMesher {
     private static SectionCompiler.Results buildTakeoverResults(NativeSectionCapture.CapturedSection captured) {
         SectionCompiler.Results results = new SectionCompiler.Results();
         results.blockEntities.addAll(captured.blockEntities());
-        ((SectionCompilerResultsAccess) results).whatOptimizations$setVisibilitySet(captured.visibilitySet());
+        ((SectionCompilerResultsAccess) (Object) results).whatOptimizations$setVisibilitySet(captured.visibilitySet());
         // renderedLayers stays empty: vanilla draws nothing for this section.
         return results;
     }
@@ -507,15 +507,15 @@ public final class NativeSectionMesher {
     }
 
     private record ParsedMesh(byte[][] passthrough, byte[][] merged, int layerMask) {
-        byte[] passthrough(int slot) {
+        public byte[] passthrough(int slot) {
             return passthrough[slot];
         }
 
-        byte[] merged(int slot) {
+        public byte[] merged(int slot) {
             return merged[slot];
         }
 
-        int layerMask() {
+        public int layerMask() {
             return layerMask;
         }
     }
